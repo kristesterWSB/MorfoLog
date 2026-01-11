@@ -1,3 +1,24 @@
+# ---KEYS and SECRETS---
+.env
+config.json
+secrets.py
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pdf
+*.png
+*.jpg
+*.jpeg
+outputs/
+poppler/
+tesseract/
+
+# --- IDE (PyCharm / VS Code) ---
+.idea/
+.vscode/
+
 # Created by https://www.toptal.com/developers/gitignore/api/python,pycharm,windows
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,pycharm,windows
 
