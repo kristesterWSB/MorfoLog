@@ -1,126 +1,125 @@
 import pytesseract
 from pdf2image import convert_from_path
-import re
 import pandas as pd  # Biblioteka do tabel
 import matplotlib.pyplot as plt
 import glob
 import os
+import re
+import time
+from analyzer import MedicalAnalyzer  # Import nowej klasy
+
+# Inicjalizacja analizatora (załaduje klucze z .env wewnątrz klasy)
+analyzer = MedicalAnalyzer()
 
 # KONFIGURACJA ŚCIEŻEK
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 POPPLER_PATH = r'C:\poppler-25.12.0\Library\bin'
+# Ścieżka do Tesseract OCR (dostosuj jeśli zainstalowałeś w innym miejscu)
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+# Konfiguracja anonimizacji
+USER_NAME_TO_REDACT = "GARUS KRZYSZTOF"  # <--- WPISZ SWOJE IMIĘ I NAZWISKO DO USUNIĘCIA
 
 
-def extract_text_from_pdf(pdf_path):
-    """Zamienia PDF na tekst za pomocą OCR."""
+def extract_and_clean_text(pdf_path):
+    """
+    1. Konwertuje PDF na obrazy.
+    2. Wykonuje OCR (Tesseract) aby uzyskać tekst.
+    3. Anonimizuje dane wrażliwe (PESEL, Telefon, Nazwisko) używając Regex.
+    """
     print(f"Przetwarzam: {pdf_path}...")
     try:
         images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
         full_text = ""
+        
+        # Krok 1: OCR
         for img in images:
-            full_text += pytesseract.image_to_string(img, lang='pol+eng') + "\n"
+            # Używamy języka polskiego dla lepszego rozpoznawania
+            text = pytesseract.image_to_string(img, lang='pol')
+            full_text += text + "\n"
+
+        # Krok 2: Anonimizacja (Regex)
+        # Usuwanie PESEL (11 cyfr)
+        full_text = re.sub(r'\b\d{11}\b', '[REDACTED_PESEL]', full_text)
+        # Usuwanie numerów telefonów (formaty: 123-456-789, 123 456 789, +48...)
+        full_text = re.sub(r'(?<!\d)\d{3}[-\s]?\d{3}[-\s]?\d{3}(?!\d)', '[REDACTED_PHONE]', full_text)
+        # Usuwanie imienia i nazwiska zdefiniowanego w konfiguracji
+        if USER_NAME_TO_REDACT:
+            full_text = re.sub(re.escape(USER_NAME_TO_REDACT), '[REDACTED_NAME]', full_text, flags=re.IGNORECASE)
+
+        print(f"--- WYNIK OCR (po anonimizacji) ---\n{full_text}\n-----------------------------------")
         return full_text
     except Exception as e:
-        print(f"Błąd OCR: {e}")
-        return ""
+        print(f"Błąd OCR/Anonimizacji: {e}")
+        return None
 
 
-def parse_results(raw_text):
-    """Wyciąga konkretne liczby i datę z surowego tekstu."""
-    data = {"Date": None}
+def main():
+    print("Skanowanie folderu w poszukiwaniu plików PDF...")
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    files = glob.glob(os.path.join(current_dir, "*.pdf"))
 
-    # Szukamy słowa "Data", potem czegokolwiek (.*?), słowa "pobrania"
-    # i w końcu samej daty ( \d{4}-\d{2}-\d{2} )
-    date_pattern = r'Data.*?pobrania.*?(\d{4}-\d{2}-\d{2})'
+    print(f"Znaleziono plików: {len(files)}")
 
-    # re.DOTALL pozwala kropce przechodzić przez nowe linie (jeśli data jest niżej)
-    # re.IGNORECASE ignoruje wielkość liter
-    date_match = re.search(date_pattern, raw_text, re.IGNORECASE | re.DOTALL)
+    all_results = []
 
-    if date_match:
-        data["Date"] = date_match.group(1)
+    for file in files:
+        # 1. Lokalny OCR i Anonimizacja
+        clean_text = extract_and_clean_text(file)
 
-    # --- GENERYCZNE PARSOWANIE WYNIKÓW ---
-    # Mapa mapująca polskie nazwy na skróty medyczne (dla porządku na wykresach)
-    # Jeśli nazwy nie ma w mapie, zostanie użyta pełna nazwa z PDF
-    name_mapping = {
-        "Leukocyty": "Leukocyty",
-        "Erytrocyty": "Erytrocyty",
-        "Hemoglobina": "Hemoglobina",
-        "Hematokryt": "Hematokryt",
-        "Płytki krwi": "Płytki krwi",
-        "Plytki krwi": "Płytki krwi", # Obsługa literówek OCR
-        "Glukoza": "Glukoza",
-        "Cholesterol całkowity": "Cholesterol całkowity"
-    }
+        # 2. Analiza tekstu przez AI
+        if clean_text:
+            # Domyślnie używamy Gemini, w razie błędu przełączy się na xAI
+            data = analyzer.analyze_text(clean_text, provider='gemini')
+            if data:
+                print(f"Pobrane dane: {data}")
+                all_results.append(data)
+            else:
+                print(f"Nie udało się pobrać danych z pliku: {os.path.basename(file)}")
 
-    # Iterujemy linia po linii, szukając wzorca: Nazwa -> Wartość -> Jednostka
-    for line in raw_text.split('\n'):
-        # Regex: Nazwa (tekst) | Wartość (liczba, ew. z <, >) | Jednostka (litery, %, /, mikro)
-        match = re.search(r"^\s*(?P<name>.*?)\s+(?P<val>[<>]?\s*\d+(?:[.,]\d+)?)\s+(?P<unit>[a-zA-Z%µ/*]+)", line)
-        
-        if match:
-            name = match.group("name").strip()
-            # Usuwamy kody ICD-9 z nazwy, np. "Glukoza (ICD-9: L43)" -> "Glukoza"
-            name = re.sub(r'\s*\(ICD-9:.*?\)', '', name).strip()
-            
-            val_str = match.group("val").replace(',', '.').replace('<', '').replace('>', '').strip()
-            key = name_mapping.get(name, name)
-            
-            try:
-                data[key] = float(val_str)
-            except ValueError:
-                continue
+        # Przy tekście limity są luźniejsze, wystarczy krótkie opóźnienie
+        time.sleep(2)
 
-    return data
+    # 3. Tworzenie tabeli i wykresów
+    if not all_results:
+        print("Brak danych do analizy.")
+        return
 
+    df = pd.DataFrame(all_results)
 
-# --- GŁÓWNA LOGIKA ---
-print("Skanowanie folderu w poszukiwaniu plików PDF...")
-# Pobieramy ścieżkę do folderu, w którym znajduje się ten skrypt
-current_dir = os.path.dirname(os.path.abspath(__file__))
-files = glob.glob(os.path.join(current_dir, "*.pdf"))
+    # Konwersja kolumn liczbowych (wszystkie poza datą)
+    for col in df.columns:
+        if col != 'Date':
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
-print(f"Znaleziono plików: {len(files)}")
+    print("\n--- ZESTAWIENIE WYNIKÓW ---")
+    print(df.to_string(index=False))
 
-all_results = []
+    if df.empty or len(df) < 2:
+        print("\n[!] Potrzebne są co najmniej dwa badania z różnymi datami, aby narysować trendy.")
+        return
 
-for file in files:
-    raw_txt = extract_text_from_pdf(file)
-    if raw_txt:
-        parsed_data = parse_results(raw_txt)
-        all_results.append(parsed_data)
-
-# Tworzymy tabelę (DataFrame)
-df = pd.DataFrame(all_results)
-
-# Wyświetlamy wynik
-print("\n--- ZESTAWIENIE WYNIKÓW ---")
-print(df.to_string(index=False))
-
-# Opcjonalnie: zapisz do Excela
-# df.to_excel("wyniki_trend.xlsx", index=False)
-
-
-# --- LOGIKA WYKRESU DLA WSZYSTKICH PARAMETRÓW ---
-
-if not df.empty and len(df) >= 2:
-    df['Date'] = pd.to_datetime(df['Date'])
-    df = df.sort_values('Date')
+    # Sortowanie po dacie
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values('Date')
 
     # Lista kolumn do narysowania (wszystkie poza datą)
-    # Wybieramy tylko te kolumny, które mają w nazwie skróty WBC, RBC, HGB, HCT, PLT
     parameters_to_plot = [col for col in df.columns if col != 'Date']
+
+    # Filtrujemy tylko te, które mają jakieś dane (nie same NaN)
+    parameters_to_plot = [col for col in parameters_to_plot if df[col].notna().any()]
 
     # Tworzymy tyle wykresów, ile mamy parametrów (jeden pod drugim)
     fig, axes = plt.subplots(nrows=len(parameters_to_plot), ncols=1, figsize=(10, 4 * len(parameters_to_plot)))
 
-    # Jeśli mamy tylko jeden parametr, axes nie jest listą, więc musimy to poprawić
     if len(parameters_to_plot) == 1:
         axes = [axes]
 
     for ax, param in zip(axes, parameters_to_plot):
-        ax.plot(df['Date'], df[param], marker='o', linestyle='-', color='teal', linewidth=2)
+        # Rysujemy tylko punkty, gdzie są dane (dropna)
+        subset = df.dropna(subset=[param])
+        ax.plot(subset['Date'], subset[param], marker='o', linestyle='-', color='teal', linewidth=2)
+
         ax.set_title(f'Trend parametru: {param}', fontsize=12)
         ax.set_ylabel('Wartość')
         ax.grid(True, linestyle='--', alpha=0.6)
@@ -128,5 +127,7 @@ if not df.empty and len(df) >= 2:
 
     plt.tight_layout()  # Żeby wykresy na siebie nie najeżdżały
     plt.show()
-else:
-    print("\n[!] Potrzebne są co najmniej dwa badania z różnymi datami, aby narysować trendy.")
+
+
+if __name__ == "__main__":
+    main()
