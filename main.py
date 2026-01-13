@@ -1,56 +1,13 @@
-import pytesseract
-from pdf2image import convert_from_path
 import pandas as pd  # Biblioteka do tabel
 import matplotlib.pyplot as plt
 import glob
 import os
-import re
 import time
 from analyzer import MedicalAnalyzer  # Import nowej klasy
+from ocr_cleaner import save_ocr_to_txt, clean_medical_ocr # Import funkcji z ocr_cleaner
 
 # Inicjalizacja analizatora (załaduje klucze z .env wewnątrz klasy)
 analyzer = MedicalAnalyzer()
-
-# KONFIGURACJA ŚCIEŻEK
-POPPLER_PATH = r'C:\poppler-25.12.0\Library\bin'
-# Ścieżka do Tesseract OCR (dostosuj jeśli zainstalowałeś w innym miejscu)
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
-# Konfiguracja anonimizacji
-USER_NAME_TO_REDACT = "GARUS KRZYSZTOF"  # <--- WPISZ SWOJE IMIĘ I NAZWISKO DO USUNIĘCIA
-
-
-def extract_and_clean_text(pdf_path):
-    """
-    1. Konwertuje PDF na obrazy.
-    2. Wykonuje OCR (Tesseract) aby uzyskać tekst.
-    3. Anonimizuje dane wrażliwe (PESEL, Telefon, Nazwisko) używając Regex.
-    """
-    print(f"Przetwarzam: {pdf_path}...")
-    try:
-        images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
-        full_text = ""
-        
-        # Krok 1: OCR
-        for img in images:
-            # Używamy języka polskiego dla lepszego rozpoznawania
-            text = pytesseract.image_to_string(img, lang='pol')
-            full_text += text + "\n"
-
-        # Krok 2: Anonimizacja (Regex)
-        # Usuwanie PESEL (11 cyfr)
-        full_text = re.sub(r'\b\d{11}\b', '[REDACTED_PESEL]', full_text)
-        # Usuwanie numerów telefonów (formaty: 123-456-789, 123 456 789, +48...)
-        full_text = re.sub(r'(?<!\d)\d{3}[-\s]?\d{3}[-\s]?\d{3}(?!\d)', '[REDACTED_PHONE]', full_text)
-        # Usuwanie imienia i nazwiska zdefiniowanego w konfiguracji
-        if USER_NAME_TO_REDACT:
-            full_text = re.sub(re.escape(USER_NAME_TO_REDACT), '[REDACTED_NAME]', full_text, flags=re.IGNORECASE)
-
-        print(f"--- WYNIK OCR (po anonimizacji) ---\n{full_text}\n-----------------------------------")
-        return full_text
-    except Exception as e:
-        print(f"Błąd OCR/Anonimizacji: {e}")
-        return None
 
 
 def main():
@@ -63,23 +20,39 @@ def main():
     all_results = []
 
     for file in files:
-        # 1. Lokalny OCR i Anonimizacja
-        clean_text = extract_and_clean_text(file)
+        # Krok 1: Użyj funkcji z ocr_cleaner.py do OCR
+        raw_text = save_ocr_to_txt(file)
 
-        # 2. Analiza tekstu przez AI
-        if clean_text:
+        if raw_text:
+            # Krok 2: Użyj funkcji z ocr_cleaner.py do czyszczenia tekstu
+            cleaned_text = clean_medical_ocr(raw_text)
+            
+            # Sprawdź, czy czyszczenie się powiodło
+            if "Błąd:" in cleaned_text:
+                print(f"Błąd podczas czyszczenia pliku {os.path.basename(file)}: {cleaned_text}")
+                continue # Przejdź do następnego pliku
+
+            # Krok 3: Analiza oczyszczonego tekstu przez AI
             # Domyślnie używamy Gemini, w razie błędu przełączy się na xAI
-            data = analyzer.analyze_text(clean_text, provider='gemini')
+            data = analyzer.analyze_text(cleaned_text, provider='gemini')
             if data:
-                print(f"Pobrane dane: {data}")
-                all_results.append(data)
+                # Sprawdź, czy odpowiedź ma oczekiwaną zagnieżdżoną strukturę
+                if 'results' in data and isinstance(data.get('results'), dict):
+                    # Spłaszcz strukturę: weź słownik 'results' i dodaj do niego datę
+                    flat_data = data['results']
+                    flat_data['Date'] = data.get('Date')
+                    
+                    print(f"Pobrane dane (spłaszczone): {flat_data}")
+                    all_results.append(flat_data)
+                else:
+                    print(f"Błąd formatu: Otrzymano dane bez klucza 'results'. Dane: {data}")
             else:
                 print(f"Nie udało się pobrać danych z pliku: {os.path.basename(file)}")
 
         # Przy tekście limity są luźniejsze, wystarczy krótkie opóźnienie
         time.sleep(2)
 
-    # 3. Tworzenie tabeli i wykresów
+    # Krok 4: Tworzenie tabeli i wykresów
     if not all_results:
         print("Brak danych do analizy.")
         return

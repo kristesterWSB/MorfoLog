@@ -34,26 +34,28 @@ class MedicalAnalyzer:
 
         # Wspólny System Prompt
         self.system_prompt = """
-        Jesteś ekspertem analitykiem medycznym.
-        Z poniższego tekstu (surowe wyniki badań krwi po OCR) wyodrębnij datę pobrania oraz WSZYSTKIE widoczne wyniki badań laboratoryjnych.
-        Nie ograniczaj się tylko do podstawowej morfologii. Wyciągnij wszystko co ma wynik liczbowy (np. MCV, MCH, MCHC, RDW, NEUT, LYMPH, MONO, Glukoza, Cholesterol, TSH, Żelazo, itp.).
-
-        Wymagany format JSON (płaska struktura):
-        {
-            "Date": "YYYY-MM-DD",
-            "Leukocyty": 6.5,
-            "RBC": 4.8,
-            "MCV": 85.0,
-            "Cholesterol": 190,
-            "TSH": 1.45
-        }
+        Jesteś asystentem medycznym. Otrzymasz oczyszczony tekst z wynikami morfologii.
+            Twoim zadaniem jest przekonwertować go na poprawny obiekt JSON.
+            
+            ZASADY:
+            1. Znajdź datę badania w pierwszej linii.
+            2. Dla każdego wyniku zamień polski format liczbowy (przecinek) na angielski (kropka), np. "5,79" -> 5.79.
+            3. Zwróć obiekt w formacie:
+               {
+                 "date": "YYYY-MM-DD",
+                 "results": {
+                   "Leukocyty": 5.79,
+                   "Erytrocyty": 5.23,
+                   "Hemoglobina": 15.9,
+                   "Hematokryt": 46.4,
+                   "PLT": 267
+                   ... (i tak dalej dla wszystkich parametrów)
+                 }
+               }
+            4. Ignoruj jednostki i zakresy referencyjne w JSON-ie. Interesuje nas tylko wartość liczbowa.
+            5. Nie dodawaj żadnych znaczników markdown (```json). Zwróć czysty tekst JSON.
         
-        Zasady:
-        1. Używaj pełnych nazw medycznych jako kluczy a gdy takiego nie ma to użyj skrótu (np. MCV, MCH)
-        2. Jeśli brak skrótu, użyj nazwy badania z tekstu (np. "Glukoza").
-        3. Wartości liczbowe podawaj jako float (kropka jako separator).
-        4. Jeśli jakiejś wartości nie ma, nie dodawaj klucza do JSONa.
-        5. Zwróć WYŁĄCZNIE czysty JSON.
+            DANE WEJŚCIOWE:
         """
 
     def analyze_text(self, text, provider='gemini'):
@@ -89,7 +91,7 @@ class MedicalAnalyzer:
             raise Exception("Klient Gemini nie jest skonfigurowany.")
 
         response = self.gemini_client.models.generate_content(
-            model='gemini-2.0-flash-lite',  # Szybki model zgodnie z wymaganiami
+            model='gemini-2.0-flash-lite',
             contents=f"{self.system_prompt}\n\nTEKST DO ANALIZY:\n{text}"
         )
         return response.text
