@@ -4,7 +4,7 @@ import glob
 import os
 import time
 from analyzer import MedicalAnalyzer  # Import nowej klasy
-from ocr_cleaner import save_ocr_to_txt, clean_medical_ocr # Import funkcji z ocr_cleaner
+from ocr_cleaner import save_ocr_to_txt, PrivacyGuard, USER_PROFILE # Import klasy i profilu z ocr_cleaner
 
 # Inicjalizacja analizatora (załaduje klucze z .env wewnątrz klasy)
 analyzer = MedicalAnalyzer()
@@ -21,20 +21,17 @@ def main():
 
     for file in files:
         # Krok 1: Użyj funkcji z ocr_cleaner.py do OCR
-        raw_text = save_ocr_to_txt(file)
+        page_texts = save_ocr_to_txt(file)
 
-        if raw_text:
-            # Krok 2: Użyj funkcji z ocr_cleaner.py do czyszczenia tekstu
-            cleaned_text = clean_medical_ocr(raw_text)
-            
-            # Sprawdź, czy czyszczenie się powiodło
-            if "Błąd:" in cleaned_text:
-                print(f"Błąd podczas czyszczenia pliku {os.path.basename(file)}: {cleaned_text}")
-                continue # Przejdź do następnego pliku
+        if page_texts:
+            # Krok 2: Użyj klasy PrivacyGuard do anonimizacji tekstu
+            print(f"--- Anonimizacja wyniku dla: {os.path.basename(file)} ---")
+            guard = PrivacyGuard(USER_PROFILE)
+            anonymized_text = guard.anonymize(page_texts)
 
             # Krok 3: Analiza oczyszczonego tekstu przez AI
             # Domyślnie używamy Gemini, w razie błędu przełączy się na xAI
-            data = analyzer.analyze_text(cleaned_text, provider='gemini')
+            data = analyzer.analyze_text(anonymized_text, provider='gemini')
             if data:
                 # Sprawdź, czy odpowiedź ma oczekiwaną zagnieżdżoną strukturę
                 if 'results' in data and isinstance(data.get('results'), dict):

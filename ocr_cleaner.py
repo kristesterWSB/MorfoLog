@@ -3,12 +3,105 @@ from pdf2image import convert_from_path
 import os
 import glob
 import re
+from thefuzz import fuzz
+from dotenv import load_dotenv
 
 # --- KONFIGURACJA ---
 # Te ścieżki muszą być dostosowane do Twojego systemu
 POPPLER_PATH = r'C:\poppler-25.12.0\Library\bin'
 TESSERACT_CMD = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 # --------------------
+
+# Wczytaj zmienne środowiskowe z pliku .env
+load_dotenv()
+
+# --- PROFIL UŻYTKOWNIKA DO ANONIMIZACJI ---
+# Dane są teraz ładowane z pliku .env
+USER_PROFILE = {
+    "name": os.getenv("USER_NAME"),
+    "lastname": os.getenv("USER_LASTNAME"),
+    "pesel": os.getenv("USER_PESEL"),
+    "address": os.getenv("USER_ADDRESS")
+}
+
+class PrivacyGuard:
+    """
+    Klasa do anonimizacji danych osobowych z surowego tekstu OCR, używająca podejścia hybrydowego.
+    """
+    def __init__(self, user_profile: dict):
+        self.profile = user_profile
+
+        # Wartości do wyszukiwania rozmytego (dobre dla imion/nazwisk podatnych na błędy OCR)
+        self.fuzzy_values = [
+            self.profile.get("name"),
+            self.profile.get("lastname"),
+            f'{self.profile.get("name")} {self.profile.get("lastname")}'.strip(),
+        ]
+        self.fuzzy_values = [v for v in self.fuzzy_values if v]
+        self.similarity_threshold = 85
+
+        # Wartości do bezpośredniego, precyzyjnego zastąpienia (dobre dla PESEL, adresu)
+        self.direct_values = [
+            self.profile.get("pesel"),
+        ]
+        
+        # Podziel adres na części, aby usunąć np. samą nazwę ulicy lub miasto
+        address = self.profile.get("address", "")
+        if address:
+            # Usuń przecinki i podziel po spacjach
+            address_parts = re.split(r'[\s,]+', address)
+            self.direct_values.extend([part for part in address_parts if len(part) > 3 and not part.isdigit()])
+
+        # Usuń puste wpisy (None) i ewentualne duplikaty
+        self.direct_values = list(set([v for v in self.direct_values if v]))
+
+    def anonymize(self, page_texts: list[str]) -> str:
+        """Działa wieloetapowo, stosując czyszczenie szumu tylko do ostatniej strony."""
+        
+        processed_pages = []
+        num_pages = len(page_texts)
+
+        for i, page_text in enumerate(page_texts):
+            is_last_page = (i == num_pages - 1)
+            
+            # Etap 1: Dopasowanie rozmyte (Fuzzy) - zastępuje całe linie podobne do imienia/nazwiska
+            lines = page_text.split('\n')
+            anonymized_lines = [
+                "[REDACTED_PERSONAL_DATA]" if any(fuzz.partial_ratio(value, line) > self.similarity_threshold for value in self.fuzzy_values) else line
+                for line in lines
+            ]
+            text_after_fuzzy = "\n".join(anonymized_lines)
+
+            # Etap 2: Bezpośrednie zastąpienie precyzyjnych danych (PESEL, fragmenty adresu)
+            anonymized_text = text_after_fuzzy
+            for value in self.direct_values:
+                pattern = r'\b' + re.escape(value) + r'\b'
+                anonymized_text = re.sub(pattern, '[REDACTED]', anonymized_text, flags=re.IGNORECASE)
+
+            # Etap 3: Czyszczenie za pomocą dodatkowych, ogólnych reguł Regex
+            anonymized_text = re.sub(r'\b\d{11}\b', '[REDACTED_PESEL]', anonymized_text)
+            lines = anonymized_text.split('\n')
+            current_page_processed_lines = [
+                "[REDACTED_ROLE_INFO]" if re.search(r'Pacjent|Odbiorca|Lekarz', line, re.IGNORECASE) else line
+                for line in lines
+            ]
+
+            # Etap 4: Usuwanie linii z metadanymi - TYLKO DLA OSTATNIEJ STRONY
+            if is_last_page:
+                noise_patterns = [
+                    r'przyjęcia prób',
+                    r'Data wykonania',
+                    r'Data/godz\. wydania',
+                    r'DIAGNOSTYKA S\.A\.',
+                    r'KREW ŻYLNA',
+                    r'Strona \d+ z \d+'
+                ]
+                noise_regex = re.compile('|'.join(noise_patterns), re.IGNORECASE)
+                current_page_processed_lines = [line for line in current_page_processed_lines if not noise_regex.search(line)]
+
+            processed_pages.append("\n".join(current_page_processed_lines))
+
+        return "\n".join(processed_pages)
 
 def save_ocr_to_txt(pdf_path):
     """
@@ -30,14 +123,15 @@ def save_ocr_to_txt(pdf_path):
         # Konwersja PDF na listę obrazów
         images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
         
-        full_text = ""
+        page_texts = []
         # Pętla przez wszystkie strony i wykonanie OCR
         for i, img in enumerate(images):
             print(f"  - Przetwarzanie strony {i + 1}/{len(images)}")
             text = pytesseract.image_to_string(img, lang='pol')
-            full_text += text + "\n"
+            page_texts.append(text)
 
-        # Zapis do pliku .txt
+        # Zapis całego, surowego tekstu do pliku .txt dla celów logowania
+        full_raw_text = "\n\n--- PAGE BREAK ---\n\n".join(page_texts)
         # Stwórz folder 'ocr_results' jeśli nie istnieje
         output_dir = os.path.join(os.path.dirname(pdf_path), "ocr_results")
         os.makedirs(output_dir, exist_ok=True)
@@ -46,80 +140,14 @@ def save_ocr_to_txt(pdf_path):
         txt_filename = os.path.splitext(os.path.basename(pdf_path))[0] + ".txt"
         txt_path = os.path.join(output_dir, txt_filename)
         with open(txt_path, "w", encoding="utf-8") as f:
-            f.write(full_text)
+            f.write(full_raw_text)
             
         print(f"✅ Pomyślnie zapisano wynik OCR do: {txt_path}")
-        return full_text
+        return page_texts
 
     except Exception as e:
         print(f"❌ Wystąpił błąd podczas przetwarzania OCR: {e}")
         return None
-
-
-def clean_medical_ocr(raw_text: str) -> str:
-    """
-    Oczyszcza surowy tekst z OCR wyników badań krwi (Diagnostyka),
-    wyodrębniając datę i kluczowe parametry morfologii.
-
-    Args:
-        raw_text: Surowy string z OCR.
-
-    Returns:
-        Czysty string z datą i przefiltrowanymi wynikami lub komunikat o błędzie.
-    """
-    # 1. Znajdź datę badania za pomocą Regex
-    # Uogólniony Regex, który obsługuje "Data/godz. pobrania" oraz "Data pobrania" z opcjonalnym dwukropkiem
-    date_match = re.search(r"Data(?:/godz\.)?\s*pobrania\s*:?\s*(\d{4}-\d{2}-\d{2})", raw_text, re.IGNORECASE)
-    if not date_match:
-        return "Błąd: Nie znaleziono daty badania we wzorcu 'Data pobrania: RRRR-MM-DD'."
-    
-    date_str = date_match.group(1)
-
-    # 2. Wyodrębnij TYLKO sekcję "Morfologia krwi"
-    # Znajdź linię nagłówka, aby ją zachować
-    morphology_header_match = re.search(r"^\s*(Morfologia krwi.*)", raw_text, re.MULTILINE | re.IGNORECASE)
-    if not morphology_header_match:
-        return f"Data badania: {date_str}\nBłąd: Nie znaleziono sekcji 'Morfologia krwi'."
-
-    morphology_header_line = morphology_header_match.group(1).strip()
-
-    # Weź tekst od początku sekcji morfologii
-    text_from_morphology = raw_text[morphology_header_match.start():]
-
-    # Znajdź koniec sekcji (początek następnego dużego badania)
-    next_section_match = re.search(r"\n\s*(OB|Badanie ogólne moczu|Rozmaz krwi|Biochemia|Koagulologia|Immunochemia)", text_from_morphology, re.IGNORECASE)
-
-    if next_section_match:
-        # Jeśli znaleziono następną sekcję, utnij tekst w tym miejscu
-        morphology_section = text_from_morphology[:next_section_match.start()]
-    else:
-        # W przeciwnym razie, bierzemy wszystko do końca
-        morphology_section = text_from_morphology
-
-    # 3. & 4. Wewnątrz sekcji przefiltruj linie, zachowując kluczowe parametry
-    keywords = [
-        "Leukocyty", "Erytrocyty", "Hemoglobina", "Hematokryt", "MCV", "MCH", "MCHC", 
-        "Płytki krwi", "RDW", "PDW", "MPV", "P-LCR", "PCT", "Neutrofile", "Limfocyty", 
-        "Monocyty", "Eozynofile", "Bazofile", "Niedojrzałe granulocyty", "NRBC"
-    ]
-
-    clean_lines = []
-    for line in morphology_section.split('\n'):
-        stripped_line = line.strip()
-        # Sprawdź, czy linia zaczyna się od jednego ze słów kluczowych
-        if any(stripped_line.startswith(kw) for kw in keywords):
-            clean_lines.append(stripped_line)
-
-    if not clean_lines:
-        return f"Data badania: {date_str}\nBłąd: Nie znaleziono żadnych wyników morfologii w wyodrębnionej sekcji."
-
-    # 5. Zwróć czysty string
-    final_output = [f"Data badania: {date_str}"]
-    final_output.append(morphology_header_line)
-    final_output.extend(clean_lines)
-    
-    return "\n".join(final_output)
-
 
 if __name__ == "__main__":
     """
@@ -137,12 +165,13 @@ if __name__ == "__main__":
     
     for pdf_file in pdf_files:
         # Krok 1: Wykonaj OCR i zapisz surowy plik .txt
-        raw_text = save_ocr_to_txt(pdf_file)
+        page_texts = save_ocr_to_txt(pdf_file)
         
-        # Krok 2: Jeśli OCR się powiódł, oczyść tekst i zapisz go do nowego pliku
-        if raw_text:
-            print(f"--- Czyszczenie wyniku dla: {os.path.basename(pdf_file)} ---")
-            cleaned_text = clean_medical_ocr(raw_text)
+        # Krok 2: Jeśli OCR się powiódł, zanonimizuj tekst i zapisz go do nowego pliku
+        if page_texts:
+            print(f"--- Anonimizacja wyniku dla: {os.path.basename(pdf_file)} ---")
+            guard = PrivacyGuard(USER_PROFILE)
+            anonymized_text = guard.anonymize(page_texts)
 
             # Stwórz folder 'cleaned_results' jeśli nie istnieje
             cleaned_output_dir = os.path.join(current_dir, "cleaned_results")
@@ -150,9 +179,9 @@ if __name__ == "__main__":
 
             # Stwórz ścieżkę do pliku w nowym folderze
             cleaned_filename = os.path.splitext(os.path.basename(pdf_file))[0] + "_cleaned.txt"
-            cleaned_txt_path = os.path.join(cleaned_output_dir, cleaned_filename)
-            with open(cleaned_txt_path, "w", encoding="utf-8") as f:
-                f.write(cleaned_text)
-            print(f"✅ Pomyślnie zapisano oczyszczony tekst do: {cleaned_txt_path}\n")
+            anonymized_txt_path = os.path.join(cleaned_output_dir, cleaned_filename)
+            with open(anonymized_txt_path, "w", encoding="utf-8") as f:
+                f.write(anonymized_text)
+            print(f"✅ Pomyślnie zapisano zanonimizowany tekst do: {anonymized_txt_path}\n")
         
     print("\n--- Zakończono przetwarzanie wszystkich plików. ---")
