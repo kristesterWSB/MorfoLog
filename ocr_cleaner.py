@@ -3,7 +3,6 @@ from pdf2image import convert_from_path
 import os
 import glob
 import re
-from thefuzz import fuzz
 from dotenv import load_dotenv
 
 # --- KONFIGURACJA ---
@@ -26,22 +25,15 @@ USER_PROFILE = {
 
 class PrivacyGuard:
     """
-    Klasa do anonimizacji danych osobowych z surowego tekstu OCR, używająca podejścia hybrydowego.
+    Klasa do anonimizacji danych osobowych z surowego tekstu OCR, używająca precyzyjnego zastępowania słów.
     """
     def __init__(self, user_profile: dict):
         self.profile = user_profile
 
-        # Wartości do wyszukiwania rozmytego (dobre dla imion/nazwisk podatnych na błędy OCR)
-        self.fuzzy_values = [
+        # Wartości do bezpośredniego, precyzyjnego zastąpienia
+        self.direct_values = [
             self.profile.get("name"),
             self.profile.get("lastname"),
-            f'{self.profile.get("name")} {self.profile.get("lastname")}'.strip(),
-        ]
-        self.fuzzy_values = [v for v in self.fuzzy_values if v]
-        self.similarity_threshold = 85
-
-        # Wartości do bezpośredniego, precyzyjnego zastąpienia (dobre dla PESEL, adresu)
-        self.direct_values = [
             self.profile.get("pesel"),
         ]
         
@@ -56,37 +48,35 @@ class PrivacyGuard:
         self.direct_values = list(set([v for v in self.direct_values if v]))
 
     def anonymize(self, page_texts: list[str]) -> str:
-        """Działa wieloetapowo, stosując czyszczenie szumu tylko do ostatniej strony."""
+        """Działa wieloetapowo, precyzyjnie zastępując słowa i czyszcząc szum tylko na ostatniej stronie."""
         
         processed_pages = []
         num_pages = len(page_texts)
 
         for i, page_text in enumerate(page_texts):
             is_last_page = (i == num_pages - 1)
+            anonymized_text = page_text
             
-            # Etap 1: Dopasowanie rozmyte (Fuzzy) - zastępuje całe linie podobne do imienia/nazwiska
-            lines = page_text.split('\n')
-            anonymized_lines = [
-                "[REDACTED_PERSONAL_DATA]" if any(fuzz.partial_ratio(value, line) > self.similarity_threshold for value in self.fuzzy_values) else line
-                for line in lines
-            ]
-            text_after_fuzzy = "\n".join(anonymized_lines)
-
-            # Etap 2: Bezpośrednie zastąpienie precyzyjnych danych (PESEL, fragmenty adresu)
-            anonymized_text = text_after_fuzzy
+            # Etap 1: Bezpośrednie zastąpienie precyzyjnych danych (Imię, Nazwisko, PESEL, fragmenty adresu)
             for value in self.direct_values:
+                # Użyj \b do dopasowania całych słów, aby uniknąć zastępowania części słów
                 pattern = r'\b' + re.escape(value) + r'\b'
                 anonymized_text = re.sub(pattern, '[REDACTED]', anonymized_text, flags=re.IGNORECASE)
 
-            # Etap 3: Czyszczenie za pomocą dodatkowych, ogólnych reguł Regex
+            # Etap 2: Czyszczenie za pomocą dodatkowych, ogólnych reguł Regex
+            # Usuń każdy pozostały 11-cyfrowy ciąg (potencjalny PESEL)
             anonymized_text = re.sub(r'\b\d{11}\b', '[REDACTED_PESEL]', anonymized_text)
-            lines = anonymized_text.split('\n')
-            current_page_processed_lines = [
-                "[REDACTED_ROLE_INFO]" if re.search(r'Pacjent|Odbiorca|Lekarz', line, re.IGNORECASE) else line
-                for line in lines
-            ]
+            
+            # Zastąp słowa-klucze ról (np. "Pacjent:"), a nie całe linie
+            anonymized_text = re.sub(r'\b(Pacjent|Odbiorca|Lekarz)\b\s*:?', '[REDACTED_ROLE_INFO]', anonymized_text, flags=re.IGNORECASE)
 
-            # Etap 4: Usuwanie linii z metadanymi - TYLKO DLA OSTATNIEJ STRONY
+            # Anonimizuj datę urodzenia - bardziej elastyczny Regex, który obsługuje różne separatory (spacja, kropka, dwukropek)
+            anonymized_text = re.sub(r'\bData ur[\s.:]*\d{4}-\d{2}-\d{2}', '[REDACTED_DOB]', anonymized_text, flags=re.IGNORECASE)
+
+            lines = anonymized_text.split('\n')
+            current_page_processed_lines = lines
+
+            # Etap 3: Usuwanie linii z metadanymi - TYLKO DLA OSTATNIEJ STRONY
             if is_last_page:
                 noise_patterns = [
                     r'przyjęcia prób',

@@ -34,28 +34,53 @@ class MedicalAnalyzer:
 
         # Wspólny System Prompt
         self.system_prompt = """
-        Jesteś asystentem medycznym. Otrzymasz oczyszczony tekst z wynikami morfologii.
-            Twoim zadaniem jest przekonwertować go na poprawny obiekt JSON.
-            
-            ZASADY:
-            1. Znajdź datę badania w pierwszej linii.
-            2. Dla każdego wyniku zamień polski format liczbowy (przecinek) na angielski (kropka), np. "5,79" -> 5.79.
-            3. Zwróć obiekt w formacie:
-               {
-                 "date": "YYYY-MM-DD",
-                 "results": {
-                   "Leukocyty": 5.79,
-                   "Erytrocyty": 5.23,
-                   "Hemoglobina": 15.9,
-                   "Hematokryt": 46.4,
-                   "PLT": 267
-                   ... (i tak dalej dla wszystkich parametrów)
-                 }
-               }
-            4. Ignoruj jednostki i zakresy referencyjne w JSON-ie. Interesuje nas tylko wartość liczbowa.
-            5. Nie dodawaj żadnych znaczników markdown (```json). Zwróć czysty tekst JSON.
+        Jesteś precyzyjnym analitykiem danych laboratoryjnych. Twoim zadaniem jest konwersja surowego tekstu OCR na format JSON, radząc sobie z szumem i duplikatami.
+
+        GŁÓWNE PROBLEMY DO ROZWIĄZANIA:
+        1. **Szum OCR i Odnośniki (BARDZO WAŻNE):** Często między nazwą a wynikiem pojawia się losowa cyfra (odnośnik do stopki), np. "IgE całkowite 2 < 15.7".
+           - REGUŁA: Ignoruj samotne cyfry stojące przed właściwym wynikiem. Właściwa wartość to "15.7".
+        2. **Znaki mniejszości/większości:**
+           - Jeśli wynik zawiera "<" lub ">" (np. "< 15.7"), usuń ten znak z wartości liczbowej "v", aby można było robić wykresy.
+           - Przenieś znak "<" lub ">" do pola "o" (operator).
+        3. **Duplikaty nazw:**
+           - Używaj listy obiektów. Jeśli nazwa się powtarza (np. Neutrofile % i Neutrofile ilość), stwórz dwa osobne obiekty.
+        4. **Łączenie stron:**
+           - Ignoruj podział na strony. Traktuj tekst jako całość.
+        5. **Scalanie sekcji:** Jeśli widzisz nagłówek badania (np. "Morfologia krwi") na jednej stronie, a potem kontynuację na drugiej (często z dopiskiem "kontynuacja"), traktuj to jako JEDNO i to samo badanie.
+        6. **Ekstrakcja kompletna:** Nie pomijaj ŻADNEJ linii z wynikiem. Przeczytaj każdą linię pod nagłówkiem sekcji.
         
-            DANE WEJŚCIOWE:
+        Twoja odpowiedź musi być poprawnym JSON, bez komentarzy czy bloków kodu.
+        STRUKTURA JSON (ŚCISŁA):
+        {
+          "data_badania": "YYYY-MM-DD",
+          "badania": [
+            {
+              "nazwa_sekcji": "Morfologia krwi (ICD-9: C55)",
+              "wyniki": [
+                {"n": "Nazwa Parametru", "v": Wartość, "u": "Jednostka", "o": "Operator"},
+                ...
+              ]
+            }
+          ]
+        }
+        
+        ZASADY EKSTRAKCJI PÓL:
+        - "n": Nazwa parametru (string).
+        - "v": CZYSTA Wartość (float/int) lub string (dla wyników opisowych).
+               UWAGA: Tutaj musi trafić sama liczba, bez znaku "<" i bez cyfry-odnośnika (np. "2").
+        - "u": Jednostka (string) lub null.
+        - "o": Operator (string). Wpisz tutaj "<" lub ">", jeśli wystąpił przy wyniku. Jeśli brak - null.
+        
+        PRZYKŁADY TRUDNYCH LINII (Pattern Recognition):
+        - Wejście: "IgE całkowite (ICD-9: L89) 2 < 15.7 IU/ml"
+          -> Wyjście: {"n": "IgE całkowite", "v": 15.7, "u": "IU/ml", "o": "<"}
+          (Zauważ: Cyfra '2' została zignorowana, znak '<' trafił do pola 'o', a 'v' to czysta liczba).
+        
+        - Wejście: "Glukoza 5 87,9 mg/dl"
+          -> Wyjście: {"n": "Glukoza", "v": 87.9, "u": "mg/dl", "o": null}
+          (Zauważ: Cyfra '5' została zignorowana).
+        
+        TEKST DO ANALIZY:
         """
 
     def analyze_text(self, text, provider='gemini'):
@@ -94,6 +119,17 @@ class MedicalAnalyzer:
             model='gemini-2.0-flash-lite',
             contents=f"{self.system_prompt}\n\nTEKST DO ANALIZY:\n{text}"
         )
+        # Bardziej szczegółowe sprawdzanie odpowiedzi
+        if not response.candidates:
+            # Przypadek 1: Całkowita blokada, brak kandydatów
+            feedback = getattr(response, 'prompt_feedback', 'Brak szczegółów.')
+            raise Exception(f"Odpowiedź zablokowana (brak kandydatów). Powód: {feedback}")
+        
+        candidate = response.candidates[0]
+        if candidate.finish_reason != 'STOP':
+            # Przypadek 2: Kandydat istnieje, ale zakończył się z powodu innego niż 'STOP' (np. 'SAFETY')
+            raise Exception(f"Generowanie odpowiedzi przerwane. Powód: '{candidate.finish_reason}'. Safety ratings: {candidate.safety_ratings}")
+
         return response.text
 
     def _query_xai(self, text):
@@ -112,12 +148,13 @@ class MedicalAnalyzer:
         return response.choices[0].message.content
 
     def _process_response(self, raw_text):
-        """Czyści markdown i mapuje klucze JSON na format wymagany przez DataFrame."""
+        """Czyści markdown i zwraca sparsowany obiekt JSON."""
+        # Logowanie surowej odpowiedzi, aby ułatwić diagnozę problemu
+        print(f"--- SUROWA ODPOWIEDŹ Z API ---\n{raw_text}\n-----------------------------")
         clean_json = re.sub(r'```json|```', '', raw_text).strip()
+        # Dodatkowe zabezpieczenie przed pustą odpowiedzią
+        if not clean_json:
+            raise json.JSONDecodeError("Otrzymano pustą odpowiedź z API po oczyszczeniu.", "", 0)
+        
         data = json.loads(clean_json)
-
-        # Normalizacja klucza daty (AI może zwrócić 'date' lub 'Date')
-        if 'date' in data:
-            data['Date'] = data.pop('date')
-            
         return data

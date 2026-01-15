@@ -336,3 +336,4 @@ $RECYCLE.BIN/
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm,windows
 /cleaned_results/
 /ocr_results/
+/json_results/

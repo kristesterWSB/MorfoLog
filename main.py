@@ -3,11 +3,60 @@ import matplotlib.pyplot as plt
 import glob
 import os
 import time
+import json
+import re
 from analyzer import MedicalAnalyzer  # Import nowej klasy
 from ocr_cleaner import save_ocr_to_txt, PrivacyGuard, USER_PROFILE # Import klasy i profilu z ocr_cleaner
 
+# --- KONFIGURACJA ---
+SAVE_JSON_ENABLED = True  # Ustaw na False, aby wyłączyć zapisywanie plików JSON
+
 # Inicjalizacja analizatora (załaduje klucze z .env wewnątrz klasy)
 analyzer = MedicalAnalyzer()
+
+# Mapa do normalizacji jednostek - standaryzuje popularne warianty i błędy OCR
+UNIT_NORMALIZATION_MAP = {
+    "min/ul": "mln/ul",
+    "f": "fl",
+    "fi": "fl",
+    "UI": "U/l",
+    "UJ": "U/l"
+}
+
+
+def _flatten_lab_results(data: dict) -> dict | None:
+    """
+    Spłaszcza zagnieżdżoną strukturę JSON z wynikami badań do płaskiego słownika.
+    Tworzy unikalne klucze dla parametrów, łącząc nazwę z jednostką (np. "Neutrofile [%]").
+    """
+    if 'badania' not in data or not isinstance(data.get('badania'), list):
+        print(f"Błąd formatu: Otrzymano dane bez klucza 'badania' lub ma on zły format. Dane: {data}")
+        return None
+
+    flat_data = {'Date': data.get('data_badania')}
+
+    for section in data.get('badania', []):
+        section_name = section.get('nazwa_sekcji', 'Inne')
+        # Czyścimy nazwę sekcji z kodów ICD-9, aby tytuły wykresów były ładniejsze
+        clean_section_name = re.sub(r'\s*\(ICD-9:.*\)', '', section_name).strip()
+
+        for result in section.get('wyniki', []):
+            if isinstance(result, dict) and 'n' in result and 'v' in result:
+                param_name = result['n']
+                param_value = result['v']
+                param_unit = result.get('u')
+                
+                # Normalizacja jednostki
+                normalized_unit = UNIT_NORMALIZATION_MAP.get(param_unit, param_unit)
+
+                # Tworzenie unikalnego klucza, aby uniknąć nadpisywania (np. "Neutrofile [%]").
+                # To kluczowe dla parametrów o tej samej nazwie ale różnych jednostkach.
+                # Dodajemy nazwę sekcji dla lepszej czytelności na wykresach.
+                base_key = f"{clean_section_name} - {param_name}"
+                unique_key = f"{base_key} [{normalized_unit}]" if normalized_unit else base_key
+                flat_data[unique_key] = param_value
+
+    return flat_data
 
 
 def main():
@@ -33,16 +82,26 @@ def main():
             # Domyślnie używamy Gemini, w razie błędu przełączy się na xAI
             data = analyzer.analyze_text(anonymized_text, provider='gemini')
             if data:
-                # Sprawdź, czy odpowiedź ma oczekiwaną zagnieżdżoną strukturę
-                if 'results' in data and isinstance(data.get('results'), dict):
-                    # Spłaszcz strukturę: weź słownik 'results' i dodaj do niego datę
-                    flat_data = data['results']
-                    flat_data['Date'] = data.get('Date')
-                    
+                # Krok 3.1: Opcjonalny zapis odpowiedzi JSON do pliku
+                if SAVE_JSON_ENABLED:
+                    json_output_dir = os.path.join(current_dir, "json_results")
+                    os.makedirs(json_output_dir, exist_ok=True)
+
+                    json_filename = os.path.splitext(os.path.basename(file))[0] + ".json"
+                    json_path = os.path.join(json_output_dir, json_filename)
+
+                    try:
+                        with open(json_path, "w", encoding="utf-8") as f:
+                            json.dump(data, f, ensure_ascii=False, indent=4)
+                        print(f"   [ZAPIS] Zapisano odpowiedź JSON do: {json_path}")
+                    except Exception as e:
+                        print(f"   [BŁĄD ZAPISU] Nie udało się zapisać pliku JSON: {e}")
+
+                # Krok 3.2: Spłaszczenie struktury JSON do formatu tabelarycznego
+                flat_data = _flatten_lab_results(data)
+                if flat_data:
                     print(f"Pobrane dane (spłaszczone): {flat_data}")
                     all_results.append(flat_data)
-                else:
-                    print(f"Błąd formatu: Otrzymano dane bez klucza 'results'. Dane: {data}")
             else:
                 print(f"Nie udało się pobrać danych z pliku: {os.path.basename(file)}")
 
