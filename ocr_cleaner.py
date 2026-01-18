@@ -138,7 +138,7 @@ def save_ocr_to_txt(pdf_path):
     except Exception as e:
         print(f"❌ Wystąpił błąd podczas przetwarzania OCR: {e}")
         return None
-
+#tylko do lokalnego sprawdzania rezultatu OCR
 if __name__ == "__main__":
     """
     Ten blok zostanie wykonany tylko wtedy, gdy uruchomisz ten plik bezpośrednio

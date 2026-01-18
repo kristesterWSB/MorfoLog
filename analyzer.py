@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import typing_extensions as typing
 from dotenv import load_dotenv
 from google import genai
 from openai import OpenAI
@@ -9,6 +10,48 @@ from openai.types.chat import ChatCompletionMessageParam
 # Ładujemy zmienne środowiskowe
 load_dotenv()
 
+# --- DEFINICJE SCHEMATÓW DANYCH (Structured Output) ---
+# Poprawiony schemat zgodny z wymaganiami biblioteki google-genai (Pydantic validation)
+# Typy muszą być wielkimi literami (STRING, NUMBER, etc.)
+# Pole nullable definiujemy przez "nullable": True (jeśli wspierane) lub po prostu typ STRING.
+
+RAPORT_MEDYCZNY_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "meta": {
+            "type": "OBJECT",
+            "properties": {
+                "data_badania": {"type": "STRING"}
+            },
+            "required": ["data_badania"]
+        },
+        "badania": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "nazwa_sekcji": {"type": "STRING"},
+                    "kod_icd": {"type": "STRING"},
+                    "wyniki": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "n": {"type": "STRING"},
+                                "v": {"type": "NUMBER"},
+                                "u": {"type": "STRING"},
+                                "f": {"type": "STRING", "nullable": True}
+                            },
+                            "required": ["n", "v", "u", "f"]
+                        }
+                    }
+                },
+                "required": ["nazwa_sekcji", "kod_icd", "wyniki"]
+            }
+        }
+    },
+    "required": ["meta", "badania"]
+}
 
 class MedicalAnalyzer:
     def __init__(self):
@@ -32,55 +75,48 @@ class MedicalAnalyzer:
             self.xai_client = None
             print("⚠️ Brak klucza XAI_API_KEY")
 
-        # Wspólny System Prompt
-        self.system_prompt = """
-        Jesteś precyzyjnym analitykiem danych laboratoryjnych. Twoim zadaniem jest konwersja surowego tekstu OCR na format JSON, radząc sobie z szumem i duplikatami.
+        # Wspólny System Prompt (bez instrukcji JSON, bo używamy Structured Output)
+        self.system_prompt = r"""
+        Jesteś ekspertem medycznym AI. Twoim celem jest bezbłędna konwersja surowego OCR na ustrukturyzowane dane.
 
-        GŁÓWNE PROBLEMY DO ROZWIĄZANIA:
-        1. **Szum OCR i Odnośniki (BARDZO WAŻNE):** Często między nazwą a wynikiem pojawia się losowa cyfra (odnośnik do stopki), np. "IgE całkowite 2 < 15.7".
-           - REGUŁA: Ignoruj samotne cyfry stojące przed właściwym wynikiem. Właściwa wartość to "15.7".
-        2. **Znaki mniejszości/większości:**
-           - Jeśli wynik zawiera "<" lub ">" (np. "< 15.7"), usuń ten znak z wartości liczbowej "v", aby można było robić wykresy.
-           - Przenieś znak "<" lub ">" do pola "o" (operator).
-        3. **Duplikaty nazw:**
+        ANALIZA DOKUMENTU (Specyfika tego pliku):
+        1. **Artefakty w Jednostkach:** OCR błędnie interpretuje jednostki jako wzory matematyczne, np. "$tys/\mu l^{*}$" lub "$mg/dl^{*}$".
+            - ZADANIE: Oczyść to. Zamiast śmieci zwróć czystą jednostkę: "mln/ul", "tys/ul", "mg/dl", "g/dl", "%".
+        2. **Flagi (H/L):** W wynikach pojawiają się litery "H" (High) i "L" (Low) oznaczające przekroczenie norm.
+           - ZADANIE: Jeśli widzisz "H", "L" lub strzałki przy wyniku, wpisz to do pola "f" (flaga).
+        3. **Nowe badania (Lipidogram, Testosteron):**
+           - Wykrywaj sekcje dynamicznie po kodach ICD-9 w nawiasach. Nie hardkoduj nazw.
+        4. **Ignorowanie Odnośników:**
+           - Jeśli nazwa badania ma cyfrę na końcu (np. "Glukoza (ICD-9: L43) 2"), ta cyfra "2" to przypis. Ignoruj ją.
+        5. **Szum OCR i Odnośniki (BARDZO WAŻNE):** Często między nazwą a wynikiem pojawia się losowa cyfra (odnośnik do stopki), np. "IgE całkowite 2 < 15.7".
+           - REGUŁA: Ignoruj samotne cyfry stojące przed właściwym wynikiem. Właściwa wartość to "15.7".   
+        6. **Duplikaty nazw:**
            - Używaj listy obiektów. Jeśli nazwa się powtarza (np. Neutrofile % i Neutrofile ilość), stwórz dwa osobne obiekty.
-        4. **Łączenie stron:**
+        7. **Błędy OCR dla NRBC:**
+           - Parametr "NRBC #" jest często mylony przez OCR z "NRBC$" lub "NRBCH". Traktuj te warianty jako "NRBC #".
+        8. **Łączenie stron:**
            - Ignoruj podział na strony. Traktuj tekst jako całość.
-        5. **Scalanie sekcji:** Jeśli widzisz nagłówek badania (np. "Morfologia krwi") na jednej stronie, a potem kontynuację na drugiej (często z dopiskiem "kontynuacja"), traktuj to jako JEDNO i to samo badanie.
-        6. **Ekstrakcja kompletna:** Nie pomijaj ŻADNEJ linii z wynikiem. Przeczytaj każdą linię pod nagłówkiem sekcji.
-        
-        Twoja odpowiedź musi być poprawnym JSON, bez komentarzy czy bloków kodu.
-        STRUKTURA JSON (ŚCISŁA):
-        {
-          "data_badania": "YYYY-MM-DD",
-          "badania": [
-            {
-              "nazwa_sekcji": "Morfologia krwi (ICD-9: C55)",
-              "wyniki": [
-                {"n": "Nazwa Parametru", "v": Wartość, "u": "Jednostka", "o": "Operator"},
-                ...
-              ]
-            }
-          ]
-        }
-        
-        ZASADY EKSTRAKCJI PÓL:
+        9. **Scalanie sekcji:** Jeśli widzisz nagłówek badania (np. "Morfologia krwi") na jednej stronie, a potem kontynuację na drugiej (często z dopiskiem "kontynuacja"), traktuj to jako JEDNO i to samo badanie.
+        10. **Ekstrakcja kompletna:** Nie pomijaj ŻADNEJ linii z wynikiem. Przeczytaj każdą linię pod nagłówkiem sekcji.
+
+        ZASADY EKSTRAKCJI:
         - "n": Nazwa parametru (string).
-        - "v": CZYSTA Wartość (float/int) lub string (dla wyników opisowych).
-               UWAGA: Tutaj musi trafić sama liczba, bez znaku "<" i bez cyfry-odnośnika (np. "2").
-        - "u": Jednostka (string) lub null.
-        - "o": Operator (string). Wpisz tutaj "<" lub ">", jeśli wystąpił przy wyniku. Jeśli brak - null.
+        - "v": Wartość liczbową (float). Ignoruj znaki "<" i ">" przy ekstrakcji liczby.
+        - "u": Jednostka (string).
+        - "f": Flaga (string "H", "L" lub null).
         
-        PRZYKŁADY TRUDNYCH LINII (Pattern Recognition):
-        - Wejście: "IgE całkowite (ICD-9: L89) 2 < 15.7 IU/ml"
-          -> Wyjście: {"n": "IgE całkowite", "v": 15.7, "u": "IU/ml", "o": "<"}
-          (Zauważ: Cyfra '2' została zignorowana, znak '<' trafił do pola 'o', a 'v' to czysta liczba).
+        SZCZEGÓLNA ZASADA OBSŁUGI PAR BADAŃ (Same Names, Different Units):
+        Niektóre parametry (zwłaszcza: "Niedojrzałe granulocyty IG", "NRBC", "Neutrofile", "Limfocyty", "Monocyty") występują dwukrotnie:
+        1. Jako odsetek (jednostka: %).
+        2. Jako liczba bezwzględna (jednostka: tys/µl, G/l, #).
         
-        - Wejście: "Glukoza 5 87,9 mg/dl"
-          -> Wyjście: {"n": "Glukoza", "v": 87.9, "u": "mg/dl", "o": null}
-          (Zauważ: Cyfra '5' została zignorowana).
+        PROBLEM:
+        Często w tekście oba te badania mają IDENTYCZNĄ lub bardzo podobną nazwę (np. "Niedojrzałe granulocyty IG").
         
-        TEKST DO ANALIZY:
+        ROZKAZ DLA CIEBIE:
+        1. Zapisz oba w liście wyników jako osobne obiekty.
+        2. Upewnij się, że pole "u" (jednostka) jest poprawnie wypełnione dla każdego z nich ("%" vs "tys/ul").
+        3. Nie modyfikuj sztucznie nazwy ("n") dopiskami w nawiasach - aplikacja rozróżni je po jednostce.
         """
 
     def analyze_text(self, text, provider='gemini'):
@@ -114,20 +150,26 @@ class MedicalAnalyzer:
     def _query_gemini(self, text):
         if not self.gemini_client:
             raise Exception("Klient Gemini nie jest skonfigurowany.")
-
+        
+        model_name = 'gemini-2.0-flash-lite'
+        print(f"   [AI] Wysyłanie zapytania do modelu: {model_name}...")
+        
         response = self.gemini_client.models.generate_content(
-            model='gemini-2.0-flash-lite',
-            contents=f"{self.system_prompt}\n\nTEKST DO ANALIZY:\n{text}"
+            model=model_name,
+            contents=f"{self.system_prompt}\n{text}",
+            config={
+                'response_mime_type': 'application/json',
+                'response_schema': RAPORT_MEDYCZNY_SCHEMA,
+                'temperature': 0.0,
+            }
         )
-        # Bardziej szczegółowe sprawdzanie odpowiedzi
+        
         if not response.candidates:
-            # Przypadek 1: Całkowita blokada, brak kandydatów
             feedback = getattr(response, 'prompt_feedback', 'Brak szczegółów.')
             raise Exception(f"Odpowiedź zablokowana (brak kandydatów). Powód: {feedback}")
         
         candidate = response.candidates[0]
         if candidate.finish_reason != 'STOP':
-            # Przypadek 2: Kandydat istnieje, ale zakończył się z powodu innego niż 'STOP' (np. 'SAFETY')
             raise Exception(f"Generowanie odpowiedzi przerwane. Powód: '{candidate.finish_reason}'. Safety ratings: {candidate.safety_ratings}")
 
         return response.text
@@ -136,8 +178,11 @@ class MedicalAnalyzer:
         if not self.xai_client:
             raise Exception("Klient xAI nie jest skonfigurowany.")
 
+        # Dla xAI musimy dodać instrukcję JSON, bo usunęliśmy ją z głównego promptu
+        xai_prompt = self.system_prompt + "\n\nOUTPUT FORMAT: JSON matching {meta: {data_badania: str}, badania: [{nazwa_sekcji: str, kod_icd: str, wyniki: [{n: str, v: float, u: str, f: str|null}]}]}"
+
         messages: list[ChatCompletionMessageParam] = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": xai_prompt},
             {"role": "user", "content": text},
         ]
 
@@ -149,10 +194,8 @@ class MedicalAnalyzer:
 
     def _process_response(self, raw_text):
         """Czyści markdown i zwraca sparsowany obiekt JSON."""
-        # Logowanie surowej odpowiedzi, aby ułatwić diagnozę problemu
         print(f"--- SUROWA ODPOWIEDŹ Z API ---\n{raw_text}\n-----------------------------")
         clean_json = re.sub(r'```json|```', '', raw_text).strip()
-        # Dodatkowe zabezpieczenie przed pustą odpowiedzią
         if not clean_json:
             raise json.JSONDecodeError("Otrzymano pustą odpowiedź z API po oczyszczeniu.", "", 0)
         

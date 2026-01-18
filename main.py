@@ -20,7 +20,13 @@ UNIT_NORMALIZATION_MAP = {
     "f": "fl",
     "fi": "fl",
     "UI": "U/l",
-    "UJ": "U/l"
+    "UJ": "U/l",
+}
+
+# Mapa do normalizacji nazw parametrów - standaryzuje popularne błędy OCR
+PARAMETER_NAME_NORMALIZATION_MAP = {
+    "NRBC$": "NRBC #",
+    "NRBCH": "NRBC #"
 }
 
 
@@ -29,11 +35,13 @@ def _flatten_lab_results(data: dict) -> dict | None:
     Spłaszcza zagnieżdżoną strukturę JSON z wynikami badań do płaskiego słownika.
     Tworzy unikalne klucze dla parametrów, łącząc nazwę z jednostką (np. "Neutrofile [%]").
     """
-    if 'badania' not in data or not isinstance(data.get('badania'), list):
-        print(f"Błąd formatu: Otrzymano dane bez klucza 'badania' lub ma on zły format. Dane: {data}")
+    # Sprawdź, czy odpowiedź ma nową, zagnieżdżoną strukturę
+    if 'meta' not in data or 'badania' not in data:
+        print(f"Błąd formatu: Otrzymano dane bez klucza 'meta' lub 'badania'. Dane: {data}")
         return None
 
-    flat_data = {'Date': data.get('data_badania')}
+    # Pobierz datę z zagnieżdżonego obiektu 'meta'
+    flat_data = {'Date': data.get('meta', {}).get('data_badania')}
 
     for section in data.get('badania', []):
         section_name = section.get('nazwa_sekcji', 'Inne')
@@ -43,16 +51,30 @@ def _flatten_lab_results(data: dict) -> dict | None:
         for result in section.get('wyniki', []):
             if isinstance(result, dict) and 'n' in result and 'v' in result:
                 param_name = result['n']
+                
+                # --- NOWOŚĆ: Czyszczenie nazwy parametru z jednostek w nawiasach ---
+                # Usuwa: [%], (%), [#], (#), [tys/ul] itp. z końca nazwy
+                param_name = re.sub(r'\s*[\[\(].*?[\]\)]$', '', param_name).strip()
+
+                # Normalizacja nazwy parametru
+                normalized_param_name = PARAMETER_NAME_NORMALIZATION_MAP.get(param_name, param_name)
+
                 param_value = result['v']
                 param_unit = result.get('u')
-                
+                param_flag = result.get('f')
+
+                # Czyszczenie jednostki z artefaktów OCR przed normalizacją
+                cleaned_unit = None
+                if param_unit:
+                    cleaned_unit = re.sub(r'[\*$\s]', '', param_unit)  # Usuwa znaki *, $ i białe znaki
+
                 # Normalizacja jednostki
-                normalized_unit = UNIT_NORMALIZATION_MAP.get(param_unit, param_unit)
+                normalized_unit = UNIT_NORMALIZATION_MAP.get(cleaned_unit, cleaned_unit)
 
                 # Tworzenie unikalnego klucza, aby uniknąć nadpisywania (np. "Neutrofile [%]").
                 # To kluczowe dla parametrów o tej samej nazwie ale różnych jednostkach.
                 # Dodajemy nazwę sekcji dla lepszej czytelności na wykresach.
-                base_key = f"{clean_section_name} - {param_name}"
+                base_key = f"{clean_section_name} - {normalized_param_name}"
                 unique_key = f"{base_key} [{normalized_unit}]" if normalized_unit else base_key
                 flat_data[unique_key] = param_value
 
@@ -117,7 +139,7 @@ def main():
 
     # Konwersja kolumn liczbowych (wszystkie poza datą)
     for col in df.columns:
-        if col != 'Date':
+        if col != 'Date' and not col.endswith('_flag'):
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
     print("\n--- ZESTAWIENIE WYNIKÓW ---")
@@ -133,7 +155,7 @@ def main():
         df = df.sort_values('Date')
 
     # Lista kolumn do narysowania (wszystkie poza datą)
-    parameters_to_plot = [col for col in df.columns if col != 'Date']
+    parameters_to_plot = [col for col in df.columns if col != 'Date' and not col.endswith('_flag')]
 
     # Filtrujemy tylko te, które mają jakieś dane (nie same NaN)
     parameters_to_plot = [col for col in parameters_to_plot if df[col].notna().any()]
@@ -147,12 +169,26 @@ def main():
     for ax, param in zip(axes, parameters_to_plot):
         # Rysujemy tylko punkty, gdzie są dane (dropna)
         subset = df.dropna(subset=[param])
-        ax.plot(subset['Date'], subset[param], marker='o', linestyle='-', color='teal', linewidth=2)
+
+        # Główna linia trendu łącząca wszystkie punkty
+        ax.plot(subset['Date'], subset[param], linestyle='-', color='gray', linewidth=1, zorder=1)
+
+        # Domyślne, zielone markery dla wszystkich punktów
+        ax.scatter(subset['Date'], subset[param], color='teal', zorder=2, label='W normie')
+
+        # Sprawdzenie i narysowanie punktów z flagami, które przykryją domyślne markery
+        flag_col_name = f"{param}_flag"
+        if flag_col_name in subset.columns:
+            high_points = subset[subset[flag_col_name] == 'H']
+            low_points = subset[subset[flag_col_name] == 'L']
+            ax.scatter(high_points['Date'], high_points[param], color='red', s=80, zorder=3, edgecolors='black', label='Powyżej normy (H)')
+            ax.scatter(low_points['Date'], low_points[param], color='blue', s=80, zorder=3, edgecolors='black', label='Poniżej normy (L)')
 
         ax.set_title(f'Trend parametru: {param}', fontsize=12)
         ax.set_ylabel('Wartość')
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.tick_params(axis='x', rotation=30)
+        ax.legend()
 
     plt.tight_layout()  # Żeby wykresy na siebie nie najeżdżały
     plt.show()
