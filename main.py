@@ -19,14 +19,17 @@ UNIT_NORMALIZATION_MAP = {
     "min/ul": "mln/ul",
     "f": "fl",
     "fi": "fl",
+    "fI": "fl",
     "UI": "U/l",
     "UJ": "U/l",
 }
 
 # Mapa do normalizacji nazw parametrów - standaryzuje popularne błędy OCR
 PARAMETER_NAME_NORMALIZATION_MAP = {
-    "NRBC$": "NRBC #",
-    "NRBCH": "NRBC #"
+    "NRBC$": "NRBC",
+    "NRBCH": "NRBC",
+    "NRBC #": "NRBC",
+    "NRBC%" : "NRBC"
 }
 
 
@@ -62,6 +65,8 @@ def _flatten_lab_results(data: dict) -> dict | None:
                 param_value = result['v']
                 param_unit = result.get('u')
                 param_flag = result.get('f')
+                if param_flag:
+                    param_flag = param_flag.strip()
 
                 # Czyszczenie jednostki z artefaktów OCR przed normalizacją
                 cleaned_unit = None
@@ -77,6 +82,8 @@ def _flatten_lab_results(data: dict) -> dict | None:
                 base_key = f"{clean_section_name} - {normalized_param_name}"
                 unique_key = f"{base_key} [{normalized_unit}]" if normalized_unit else base_key
                 flat_data[unique_key] = param_value
+                if param_flag:
+                    flat_data[f"{unique_key}_flag"] = param_flag
 
     return flat_data
 
