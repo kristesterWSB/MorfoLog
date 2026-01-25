@@ -6,7 +6,7 @@ import time
 import json
 import re
 from analyzer import MedicalAnalyzer  # Import nowej klasy
-from ocr_cleaner import save_ocr_to_txt, PrivacyGuard, USER_PROFILE # Import klasy i profilu z ocr_cleaner
+from ocr_cleaner import save_ocr_to_txt, PrivacyGuard, USER_PROFILE
 
 # --- KONFIGURACJA ---
 SAVE_JSON_ENABLED = True  # Ustaw na False, aby wyłączyć zapisywanie plików JSON
@@ -22,6 +22,8 @@ UNIT_NORMALIZATION_MAP = {
     "fI": "fl",
     "UI": "U/l",
     "UJ": "U/l",
+    "pe": "pg",   # Naprawa błędu AI (pg* -> pe)
+    "pg*": "pg",  # Na wypadek gdyby AI przepuściło gwiazdkę
 }
 
 # Mapa do normalizacji nazw parametrów - standaryzuje popularne błędy OCR
@@ -29,7 +31,8 @@ PARAMETER_NAME_NORMALIZATION_MAP = {
     "NRBC$": "NRBC",
     "NRBCH": "NRBC",
     "NRBC #": "NRBC",
-    "NRBC%" : "NRBC"
+    "NRBC%" : "NRBC",
+    "NRBC %" : "NRBC"
 }
 
 
@@ -65,6 +68,8 @@ def _flatten_lab_results(data: dict) -> dict | None:
                 param_value = result['value']
                 param_unit = result.get('unit')
                 param_flag = result.get('flag')
+                param_min = result.get('range_min')
+                param_max = result.get('range_max')
                 if param_flag:
                     param_flag = param_flag.strip()
 
@@ -84,6 +89,10 @@ def _flatten_lab_results(data: dict) -> dict | None:
                 flat_data[unique_key] = param_value
                 if param_flag:
                     flat_data[f"{unique_key}_flag"] = param_flag
+                if param_min is not None:
+                    flat_data[f"{unique_key}_min"] = param_min
+                if param_max is not None:
+                    flat_data[f"{unique_key}_max"] = param_max
 
     return flat_data
 
@@ -98,7 +107,7 @@ def main():
     all_results = []
 
     for file in files:
-        # Krok 1: Użyj funkcji z ocr_cleaner.py do OCR
+        # Krok 1: Użyj funkcji z ocr_cleaner.py do OCR (stara metoda)
         page_texts = save_ocr_to_txt(file)
 
         if page_texts:
@@ -162,7 +171,7 @@ def main():
         df = df.sort_values('Date')
 
     # Lista kolumn do narysowania (wszystkie poza datą)
-    parameters_to_plot = [col for col in df.columns if col != 'Date' and not col.endswith('_flag')]
+    parameters_to_plot = [col for col in df.columns if col != 'Date' and not col.endswith('_flag') and not col.endswith('_min') and not col.endswith('_max')]
 
     # Filtrujemy tylko te, które mają jakieś dane (nie same NaN)
     parameters_to_plot = [col for col in parameters_to_plot if df[col].notna().any()]
@@ -176,6 +185,23 @@ def main():
     for ax, param in zip(axes, parameters_to_plot):
         # Rysujemy tylko punkty, gdzie są dane (dropna)
         subset = df.dropna(subset=[param])
+
+        # --- RYSOWANIE ZAKRESU REFERENCYJNEGO (WSTĘGA) ---
+        min_col = f"{param}_min"
+        max_col = f"{param}_max"
+
+        if min_col in df.columns and max_col in df.columns:
+            # Pobieramy wartości norm dla punktów, które rysujemy
+            # fillna(0) dla minimum obsługuje przypadki typu "< 5" (gdzie min to null)
+            vals_min = subset[min_col].fillna(0)
+            vals_max = subset[max_col]
+
+            # Rysujemy wstęgę tylko jeśli mamy dane o maksimum
+            if vals_max.notna().any():
+                ax.fill_between(subset['Date'], vals_min, vals_max, color='green', alpha=0.15, label='Zakres normy')
+                # Opcjonalnie: delikatne linie krawędziowe normy
+                # ax.plot(subset['Date'], vals_max, color='green', linestyle=':', alpha=0.3, linewidth=0.5)
+                # ax.plot(subset['Date'], vals_min, color='green', linestyle=':', alpha=0.3, linewidth=0.5)
 
         # Główna linia trendu łącząca wszystkie punkty
         ax.plot(subset['Date'], subset[param], linestyle='-', color='gray', linewidth=1, zorder=1)

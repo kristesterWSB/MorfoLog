@@ -15,7 +15,7 @@ load_dotenv()
 # Typy muszą być wielkimi literami (STRING, NUMBER, etc.)
 # Pole nullable definiujemy przez "nullable": True (jeśli wspierane) lub po prostu typ STRING.
 
-RAPORT_MEDYCZNY_SCHEMA = {
+MEDICAL_REPORT_SCHEMA = {
     "type": "OBJECT",
     "properties": {
         "meta": {
@@ -40,9 +40,11 @@ RAPORT_MEDYCZNY_SCHEMA = {
                                 "name": {"type": "STRING"},
                                 "value": {"type": "NUMBER"},
                                 "unit": {"type": "STRING"},
+                                "range_min": {"type": "NUMBER", "nullable": True},
+                                "range_max": {"type": "NUMBER", "nullable": True},
                                 "flag": {"type": "STRING", "nullable": True}
                             },
-                            "required": ["name", "value", "unit", "flag"]
+                            "required": ["name", "value", "unit", "range_min", "range_max", "flag"]
                         }
                     }
                 },
@@ -81,7 +83,7 @@ class MedicalAnalyzer:
 
         ANALIZA DOKUMENTU (Specyfika tego pliku):
         1. **Artefakty w Jednostkach:** OCR błędnie interpretuje jednostki jako wzory matematyczne, np. "$tys/\mu l^{*}$" lub "$mg/dl^{*}$".
-            - ZADANIE: Oczyść to. Zamiast śmieci zwróć czystą jednostkę: "mln/ul", "tys/ul", "mg/dl", "g/dl", "%".
+            - ZADANIE: Oczyść to. Zamiast śmieci zwróć czystą jednostkę: "mln/ul", "tys/ul", "mg/dl", "g/dl", "%", "pg", "fl". Ignoruj gwiazdki (*) przy jednostkach (np. "pg*" -> "pg").
         2. **Flagi (H/L):** W wynikach pojawiają się litery "H" (High) i "L" (Low) oznaczające przekroczenie norm.
            - ZADANIE: Jeśli widzisz "H", "L" lub strzałki przy wyniku, wpisz to do pola "f" (flaga).
         3. **Nowe badania (Lipidogram, Testosteron):**
@@ -98,11 +100,16 @@ class MedicalAnalyzer:
            - Ignoruj podział na strony. Traktuj tekst jako całość.
         9. **Scalanie sekcji:** Jeśli widzisz nagłówek badania (np. "Morfologia krwi") na jednej stronie, a potem kontynuację na drugiej (często z dopiskiem "kontynuacja"), traktuj to jako JEDNO i to samo badanie.
         10. **Ekstrakcja kompletna:** Nie pomijaj ŻADNEJ linii z wynikiem. Przeczytaj każdą linię pod nagłówkiem sekcji.
+        11. **Format Daty:** Data badania ("date_examination") musi być w ścisłym formacie "YYYY-MM-DD" (np. "2023-05-12"). Jeśli w tekście widnieje godzina (np. "2023-11-15 09:21"), usuń ją i zwróć tylko datę.
+        12. **Zakresy referencyjne (Normy):** Często po wyniku i jednostce występują dwie liczby oznaczające zakres (min i max) w 4. i 5. kolumnie, np. "Leukocyty 5,53 tys/ul 4,00 10,00". W tym przypadku range_min=4.00, range_max=10.00. Wyodrębnij te wartości. Jeśli norma jest jednostronna (np. "< 5"), wpisz odpowiednio (min=null, max=5).
+            **KOREKTA BŁĘDÓW OCR:** Często w OCR znikają przecinki w normach (np. "360" zamiast "36,0"). Jeśli zakresy są nielogicznie wysokie w porównaniu do wyniku (np. wynik 42, a norma 360-470), to błąd OCR. Wstaw przecinek, aby dopasować rząd wielkości (zmień 360 na 36.0).
 
         ZASADY EKSTRAKCJI:
         - "name": Nazwa parametru (string).
-        - "value": Wartość liczbową (float). Ignoruj znaki "<" i ">" przy ekstrakcji liczby.
+        - "value": Wartość liczbową (float). Ignoruj znaki "<" i ">". Jeśli wynik jest tekstem (np. "ujemny", "przejrzysty") lub zakresem, POMIŃ ten parametr.
         - "unit": Jednostka (string).
+        - "range_min": Dolna granica normy (float lub null).
+        - "range_max": Górna granica normy (float lub null).
         - "flag": Flaga (string "H", "L" lub null).
         
         SZCZEGÓLNA ZASADA OBSŁUGI PAR BADAŃ (Same Names, Different Units):
@@ -159,7 +166,7 @@ class MedicalAnalyzer:
             contents=f"{self.system_prompt}\n{text}",
             config={
                 'response_mime_type': 'application/json',
-                'response_schema': RAPORT_MEDYCZNY_SCHEMA,
+                'response_schema': MEDICAL_REPORT_SCHEMA,
                 'temperature': 0.0,
             }
         )
@@ -179,7 +186,7 @@ class MedicalAnalyzer:
             raise Exception("Klient xAI nie jest skonfigurowany.")
 
         # Dla xAI musimy dodać instrukcję JSON, bo usunęliśmy ją z głównego promptu
-        xai_prompt = self.system_prompt + "\n\nOUTPUT FORMAT: JSON matching {meta: {date_examination: str}, examinations: [{examination_name: str, code_icd: str, results: [{name: str, value: float, unit: str, flag: str|null}]}]}"
+        xai_prompt = self.system_prompt + "\n\nOUTPUT FORMAT: JSON matching {meta: {date_examination: str}, examinations: [{examination_name: str, code_icd: str, results: [{name: str, value: float, unit: str, range_min: float|null, range_max: float|null, flag: str|null}]}]}"
 
         messages: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": xai_prompt},
