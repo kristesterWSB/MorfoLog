@@ -21,36 +21,36 @@ RAPORT_MEDYCZNY_SCHEMA = {
         "meta": {
             "type": "OBJECT",
             "properties": {
-                "data_badania": {"type": "STRING"}
+                "date_examination": {"type": "STRING"}
             },
-            "required": ["data_badania"]
+            "required": ["date_examination"]
         },
-        "badania": {
+        "examinations": {
             "type": "ARRAY",
             "items": {
                 "type": "OBJECT",
                 "properties": {
-                    "nazwa_sekcji": {"type": "STRING"},
-                    "kod_icd": {"type": "STRING"},
-                    "wyniki": {
+                    "examination_name": {"type": "STRING"},
+                    "code_icd": {"type": "STRING"},
+                    "results": {
                         "type": "ARRAY",
                         "items": {
                             "type": "OBJECT",
                             "properties": {
-                                "n": {"type": "STRING"},
-                                "v": {"type": "NUMBER"},
-                                "u": {"type": "STRING"},
-                                "f": {"type": "STRING", "nullable": True}
+                                "name": {"type": "STRING"},
+                                "value": {"type": "NUMBER"},
+                                "unit": {"type": "STRING"},
+                                "flag": {"type": "STRING", "nullable": True}
                             },
-                            "required": ["n", "v", "u", "f"]
+                            "required": ["name", "value", "unit", "flag"]
                         }
                     }
                 },
-                "required": ["nazwa_sekcji", "kod_icd", "wyniki"]
+                "required": ["examination_name", "code_icd", "results"]
             }
         }
     },
-    "required": ["meta", "badania"]
+    "required": ["meta", "examinations"]
 }
 
 class MedicalAnalyzer:
@@ -100,10 +100,10 @@ class MedicalAnalyzer:
         10. **Ekstrakcja kompletna:** Nie pomijaj ŻADNEJ linii z wynikiem. Przeczytaj każdą linię pod nagłówkiem sekcji.
 
         ZASADY EKSTRAKCJI:
-        - "n": Nazwa parametru (string).
-        - "v": Wartość liczbową (float). Ignoruj znaki "<" i ">" przy ekstrakcji liczby.
-        - "u": Jednostka (string).
-        - "f": Flaga (string "H", "L" lub null).
+        - "name": Nazwa parametru (string).
+        - "value": Wartość liczbową (float). Ignoruj znaki "<" i ">" przy ekstrakcji liczby.
+        - "unit": Jednostka (string).
+        - "flag": Flaga (string "H", "L" lub null).
         
         SZCZEGÓLNA ZASADA OBSŁUGI PAR BADAŃ (Same Names, Different Units):
         Niektóre parametry (zwłaszcza: "Niedojrzałe granulocyty IG", "NRBC", "Neutrofile", "Limfocyty", "Monocyty") występują dwukrotnie:
@@ -115,8 +115,8 @@ class MedicalAnalyzer:
         
         ROZKAZ DLA CIEBIE:
         1. Zapisz oba w liście wyników jako osobne obiekty.
-        2. Upewnij się, że pole "u" (jednostka) jest poprawnie wypełnione dla każdego z nich ("%" vs "tys/ul").
-        3. Nie modyfikuj sztucznie nazwy ("n") dopiskami w nawiasach - aplikacja rozróżni je po jednostce.
+        2. Upewnij się, że pole "unit" (jednostka) jest poprawnie wypełnione dla każdego z nich ("%" vs "tys/ul").
+        3. Nie modyfikuj sztucznie nazwy ("name") dopiskami w nawiasach - aplikacja rozróżni je po jednostce.
         """
 
     def analyze_text(self, text, provider='gemini'):
@@ -179,7 +179,7 @@ class MedicalAnalyzer:
             raise Exception("Klient xAI nie jest skonfigurowany.")
 
         # Dla xAI musimy dodać instrukcję JSON, bo usunęliśmy ją z głównego promptu
-        xai_prompt = self.system_prompt + "\n\nOUTPUT FORMAT: JSON matching {meta: {data_badania: str}, badania: [{nazwa_sekcji: str, kod_icd: str, wyniki: [{n: str, v: float, u: str, f: str|null}]}]}"
+        xai_prompt = self.system_prompt + "\n\nOUTPUT FORMAT: JSON matching {meta: {date_examination: str}, examinations: [{examination_name: str, code_icd: str, results: [{name: str, value: float, unit: str, flag: str|null}]}]}"
 
         messages: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": xai_prompt},

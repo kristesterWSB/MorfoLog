@@ -39,21 +39,21 @@ def _flatten_lab_results(data: dict) -> dict | None:
     Tworzy unikalne klucze dla parametrów, łącząc nazwę z jednostką (np. "Neutrofile [%]").
     """
     # Sprawdź, czy odpowiedź ma nową, zagnieżdżoną strukturę
-    if 'meta' not in data or 'badania' not in data:
-        print(f"Błąd formatu: Otrzymano dane bez klucza 'meta' lub 'badania'. Dane: {data}")
+    if 'meta' not in data or 'examinations' not in data:
+        print(f"Błąd formatu: Otrzymano dane bez klucza 'meta' lub 'examinations'. Dane: {data}")
         return None
 
     # Pobierz datę z zagnieżdżonego obiektu 'meta'
-    flat_data = {'Date': data.get('meta', {}).get('data_badania')}
+    flat_data = {'Date': data.get('meta', {}).get('date_examination')}
 
-    for section in data.get('badania', []):
-        section_name = section.get('nazwa_sekcji', 'Inne')
+    for section in data.get('examinations', []):
+        section_name = section.get('examination_name', 'Inne')
         # Czyścimy nazwę sekcji z kodów ICD-9, aby tytuły wykresów były ładniejsze
         clean_section_name = re.sub(r'\s*\(ICD-9:.*\)', '', section_name).strip()
 
-        for result in section.get('wyniki', []):
-            if isinstance(result, dict) and 'n' in result and 'v' in result:
-                param_name = result['n']
+        for result in section.get('results', []):
+            if isinstance(result, dict) and 'name' in result and 'value' in result:
+                param_name = result['name']
                 
                 # --- NOWOŚĆ: Czyszczenie nazwy parametru z jednostek w nawiasach ---
                 # Usuwa: [%], (%), [#], (#), [tys/ul] itp. z końca nazwy
@@ -62,9 +62,9 @@ def _flatten_lab_results(data: dict) -> dict | None:
                 # Normalizacja nazwy parametru
                 normalized_param_name = PARAMETER_NAME_NORMALIZATION_MAP.get(param_name, param_name)
 
-                param_value = result['v']
-                param_unit = result.get('u')
-                param_flag = result.get('f')
+                param_value = result['value']
+                param_unit = result.get('unit')
+                param_flag = result.get('flag')
                 if param_flag:
                     param_flag = param_flag.strip()
 
