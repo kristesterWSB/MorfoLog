@@ -6,10 +6,13 @@ import time
 import json
 import re
 from analyzer import MedicalAnalyzer  # Import nowej klasy
-from ocr_cleaner import save_ocr_to_txt, PrivacyGuard, USER_PROFILE
+from ocr_cleaner import PrivacyGuard, USER_PROFILE, save_ocr_to_txt
+from google_vision_ocr import GoogleVisionOCR
 
 # --- KONFIGURACJA ---
 SAVE_JSON_ENABLED = True  # Ustaw na False, aby wyłączyć zapisywanie plików JSON
+USE_GOOGLE_VISION = True  # True = Google Vision API, False = Tesseract (lokalny)
+GCP_KEY_PATH = "gcp_key.json" # Ścieżka do klucza Google Cloud
 
 # Inicjalizacja analizatora (załaduje klucze z .env wewnątrz klasy)
 analyzer = MedicalAnalyzer()
@@ -104,17 +107,49 @@ def main():
 
     print(f"Znaleziono plików: {len(files)}")
 
+    # Inicjalizacja OCR (jeśli wybrano Google Vision)
+    vision_ocr = None
+    if USE_GOOGLE_VISION:
+        vision_ocr = GoogleVisionOCR(GCP_KEY_PATH, poppler_path=r'C:\poppler-25.12.0\Library\bin')
+
     all_results = []
 
     for file in files:
-        # Krok 1: Użyj funkcji z ocr_cleaner.py do OCR (stara metoda)
-        page_texts = save_ocr_to_txt(file)
+        page_texts = []
+        
+        # Krok 1: Wykonaj OCR (Vision lub Tesseract)
+        if USE_GOOGLE_VISION:
+            print(f"Przetwarzanie Google Vision dla: {os.path.basename(file)}...")
+            page_texts = vision_ocr.extract_text(file)
+            
+            # Ręczny zapis surowego wyniku (dla Vision), bo save_ocr_to_txt robił to automatycznie dla Tesseracta
+            if page_texts:
+                raw_text = "\n\n--- PAGE BREAK ---\n\n".join(page_texts)
+                output_dir = os.path.join(os.path.dirname(file), "ocr_results")
+                os.makedirs(output_dir, exist_ok=True)
+                txt_filename = os.path.splitext(os.path.basename(file))[0] + ".txt"
+                txt_path = os.path.join(output_dir, txt_filename)
+                with open(txt_path, "w", encoding="utf-8") as f:
+                    f.write(raw_text)
+                print(f"✅ [Vision] Zapisano surowy OCR do: {txt_path}")
+        else:
+            # Stara metoda (Tesseract) - funkcja sama zapisuje plik
+            page_texts = save_ocr_to_txt(file)
 
         if page_texts:
             # Krok 2: Użyj klasy PrivacyGuard do anonimizacji tekstu
             print(f"--- Anonimizacja wyniku dla: {os.path.basename(file)} ---")
             guard = PrivacyGuard(USER_PROFILE)
             anonymized_text = guard.anonymize(page_texts)
+            
+            # Zapisz oczyszczony tekst do pliku (wymagane przez użytkownika)
+            cleaned_output_dir = os.path.join(current_dir, "cleaned_results")
+            os.makedirs(cleaned_output_dir, exist_ok=True)
+            cleaned_filename = os.path.splitext(os.path.basename(file))[0] + "_cleaned.txt"
+            cleaned_path = os.path.join(cleaned_output_dir, cleaned_filename)
+            with open(cleaned_path, "w", encoding="utf-8") as f:
+                f.write(anonymized_text)
+            print(f"✅ Zapisano oczyszczony tekst do: {cleaned_path}")
 
             # Krok 3: Analiza oczyszczonego tekstu przez AI
             # Domyślnie używamy Gemini, w razie błędu przełączy się na xAI

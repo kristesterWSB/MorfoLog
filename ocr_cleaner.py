@@ -71,7 +71,7 @@ class PrivacyGuard:
             anonymized_text = re.sub(r'\b(Pacjent|Odbiorca|Lekarz)\b\s*:?', '[REDACTED_ROLE_INFO]', anonymized_text, flags=re.IGNORECASE)
 
             # Anonimizuj datę urodzenia - bardziej elastyczny Regex, który obsługuje różne separatory (spacja, kropka, dwukropek)
-            anonymized_text = re.sub(r'\bData ur[\s.:]*\d{4}-\d{2}-\d{2}', '[REDACTED_DOB]', anonymized_text, flags=re.IGNORECASE)
+            anonymized_text = re.sub(r'\bData ur[\s.:]*\n?\d{4}-\d{2}-\d{2}', '[REDACTED_DOB]', anonymized_text, flags=re.IGNORECASE)
 
             lines = anonymized_text.split('\n')
             current_page_processed_lines = lines
@@ -84,7 +84,7 @@ class PrivacyGuard:
                     r'Data/godz\. wydania',
                     r'DIAGNOSTYKA S\.A\.',
                     r'KREW ŻYLNA',
-                    r'Strona \d+ z \d+'
+                    r'Strona:? \d+ z \d+'
                 ]
                 noise_regex = re.compile('|'.join(noise_patterns), re.IGNORECASE)
                 current_page_processed_lines = [line for line in current_page_processed_lines if not noise_regex.search(line)]
