@@ -1,0 +1,237 @@
+{
+    "meta": {
+        "date_examination": "2025-12-31"
+    },
+    "examinations": [
+        {
+            "examination_name": "Morfologia krwi",
+            "code_icd": "C55",
+            "results": [
+                {
+                    "name": "Leukocyty",
+                    "value": 5.53,
+                    "unit": "tys/ul",
+                    "range_min": 4.0,
+                    "range_max": 10.0,
+                    "flag": null
+                },
+                {
+                    "name": "Neutrofile",
+                    "value": 2.19,
+                    "unit": "tys/ul",
+                    "range_min": 1.9,
+                    "range_max": 7.0,
+                    "flag": null
+                },
+                {
+                    "name": "Limfocyty",
+                    "value": 2.4,
+                    "unit": "tys/ul",
+                    "range_min": 1.5,
+                    "range_max": 4.5,
+                    "flag": null
+                },
+                {
+                    "name": "Monocyty",
+                    "value": 0.45,
+                    "unit": "tys/ul",
+                    "range_min": 0.1,
+                    "range_max": 0.9,
+                    "flag": null
+                },
+                {
+                    "name": "Eozynofile",
+                    "value": 0.44,
+                    "unit": "tys/ul",
+                    "range_min": 0.05,
+                    "range_max": 0.5,
+                    "flag": null
+                },
+                {
+                    "name": "Bazofile",
+                    "value": 0.04,
+                    "unit": "tys/ul",
+                    "range_min": 0.0,
+                    "range_max": 0.1,
+                    "flag": null
+                },
+                {
+                    "name": "Niedojrzałe granulocyty IG",
+                    "value": 0.01,
+                    "unit": "tys/ul",
+                    "range_min": 0.0,
+                    "range_max": 0.07,
+                    "flag": null
+                },
+                {
+                    "name": "Neutrofile",
+                    "value": 39.6,
+                    "unit": "%",
+                    "range_min": 45.0,
+                    "range_max": 70.0,
+                    "flag": "L"
+                },
+                {
+                    "name": "Limfocyty",
+                    "value": 43.4,
+                    "unit": "%",
+                    "range_min": 25.0,
+                    "range_max": 45.0,
+                    "flag": null
+                },
+                {
+                    "name": "Monocyty",
+                    "value": 8.1,
+                    "unit": "%",
+                    "range_min": 2.0,
+                    "range_max": 9.0,
+                    "flag": null
+                },
+                {
+                    "name": "Eozynofile",
+                    "value": 8.0,
+                    "unit": "%",
+                    "range_min": 0.0,
+                    "range_max": 5.0,
+                    "flag": "H"
+                },
+                {
+                    "name": "Bazofile",
+                    "value": 0.7,
+                    "unit": "%",
+                    "range_min": 0.0,
+                    "range_max": 1.1,
+                    "flag": null
+                },
+                {
+                    "name": "Niedojrzałe granulocyty IG",
+                    "value": 0.2,
+                    "unit": "%",
+                    "range_min": 0.0,
+                    "range_max": 1.0,
+                    "flag": null
+                },
+                {
+                    "name": "Erytrocyty",
+                    "value": 5.3,
+                    "unit": "mln/ul",
+                    "range_min": 4.6,
+                    "range_max": 6.5,
+                    "flag": null
+                },
+                {
+                    "name": "Hemoglobina",
+                    "value": 16.0,
+                    "unit": "g/dl",
+                    "range_min": 13.5,
+                    "range_max": 18.0,
+                    "flag": null
+                },
+                {
+                    "name": "Hematokryt",
+                    "value": 47.3,
+                    "unit": "%",
+                    "range_min": 40.0,
+                    "range_max": 52.0,
+                    "flag": null
+                },
+                {
+                    "name": "MCV",
+                    "value": 89.2,
+                    "unit": "fl",
+                    "range_min": 80.0,
+                    "range_max": 98.0,
+                    "flag": null
+                },
+                {
+                    "name": "MCH",
+                    "value": 30.2,
+                    "unit": "pg",
+                    "range_min": 27.0,
+                    "range_max": 32.0,
+                    "flag": null
+                },
+                {
+                    "name": "MCHC",
+                    "value": 33.8,
+                    "unit": "g/dl",
+                    "range_min": 31.0,
+                    "range_max": 37.0,
+                    "flag": null
+                },
+                {
+                    "name": "RDW - SD",
+                    "value": 42.7,
+                    "unit": "fl",
+                    "range_min": 36.0,
+                    "range_max": 47.0,
+                    "flag": null
+                },
+                {
+                    "name": "RDW - CV",
+                    "value": 13.2,
+                    "unit": "%",
+                    "range_min": 11.5,
+                    "range_max": 14.5,
+                    "flag": null
+                },
+                {
+                    "name": "NRBC #",
+                    "value": 0.0,
+                    "unit": "tys/ul",
+                    "range_min": 0.0,
+                    "range_max": 0.01,
+                    "flag": null
+                },
+                {
+                    "name": "NRBC %",
+                    "value": 0.0,
+                    "unit": "%",
+                    "range_min": 0.0,
+                    "range_max": 0.2,
+                    "flag": null
+                },
+                {
+                    "name": "Płytki krwi",
+                    "value": 209.0,
+                    "unit": "tys/ul",
+                    "range_min": 150.0,
+                    "range_max": 400.0,
+                    "flag": null
+                },
+                {
+                    "name": "MPV",
+                    "value": 11.8,
+                    "unit": "fl",
+                    "range_min": 7.0,
+                    "range_max": 12.0,
+                    "flag": null
+                },
+                {
+                    "name": "PCT",
+                    "value": 0.25,
+                    "unit": "%",
+                    "range_min": 0.12,
+                    "range_max": 0.36,
+                    "flag": null
+                },
+                {
+                    "name": "PDW",
+                    "value": 15.8,
+                    "unit": "fl",
+                    "range_min": 10.0,
+                    "range_max": 17.4,
+                    "flag": null
+                },
+                {
+                    "name": "P - LCR",
+                    "value": 39.2,
+                    "unit": "%",
+                    "range_min": 19.3,
+                    "range_max": 47.1,
+                    "flag": null
+                }
+            ]
+        }
+    ]
+}
