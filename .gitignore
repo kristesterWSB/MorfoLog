@@ -1,5 +1,5 @@
 # ---KEYS and SECRETS---
-.env
+engine-python/.env
 config.json
 secrets.py
 venv/
@@ -14,7 +14,7 @@ __pycache__/
 outputs/
 poppler/
 tesseract/
-gcp_key.json
+engine-python/gcp_key.json
 
 # --- IDE (PyCharm / VS Code) ---
 .idea/
@@ -259,7 +259,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+engine-python/.env
 .venv
 env/
 venv/
@@ -338,3 +338,6 @@ $RECYCLE.BIN/
 /cleaned_results/
 /ocr_results/
 /json_results/
+/engine-python/cleaned_results/
+/engine-python/json_results/
+/engine-python/ocr_results/

@@ -12,7 +12,7 @@ from google_vision_ocr import GoogleVisionOCR
 # --- KONFIGURACJA ---
 SAVE_JSON_ENABLED = True  # Ustaw na False, aby wyłączyć zapisywanie plików JSON
 USE_GOOGLE_VISION = True  # True = Google Vision API, False = Tesseract (lokalny)
-GCP_KEY_PATH = "gcp_key.json" # Ścieżka do klucza Google Cloud
+GCP_KEY_PATH = "gcp_key.json"  # Ścieżka do klucza Google Cloud (względem engine-python)
 
 # Inicjalizacja analizatora (załaduje klucze z .env wewnątrz klasy)
 analyzer = MedicalAnalyzer()
@@ -102,15 +102,27 @@ def _flatten_lab_results(data: dict) -> dict | None:
 
 def main():
     print("Skanowanie folderu w poszukiwaniu plików PDF...")
+    # Zmieniono ścieżkę na katalog uploads w root projektu
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    files = glob.glob(os.path.join(current_dir, "*.pdf"))
+    project_root = os.path.dirname(current_dir)
+    uploads_dir = os.path.join(project_root, "uploads")
+    
+    # Upewnij się, że katalog uploads istnieje
+    if not os.path.exists(uploads_dir):
+        print(f"Katalog {uploads_dir} nie istnieje. Tworzę go...")
+        os.makedirs(uploads_dir)
+        
+    files = glob.glob(os.path.join(uploads_dir, "*.pdf"))
 
     print(f"Znaleziono plików: {len(files)}")
 
     # Inicjalizacja OCR (jeśli wybrano Google Vision)
     vision_ocr = None
     if USE_GOOGLE_VISION:
-        vision_ocr = GoogleVisionOCR(GCP_KEY_PATH, poppler_path=r'C:\poppler-25.12.0\Library\bin')
+        # Ścieżka do klucza GCP względem katalogu engine-python
+        # Używamy os.path.abspath, aby rozwiązać ścieżkę względną ".."
+        key_path = os.path.abspath(os.path.join(current_dir, GCP_KEY_PATH))
+        vision_ocr = GoogleVisionOCR(key_path, poppler_path=r'C:\poppler-25.12.0\Library\bin')
 
     all_results = []
 
@@ -125,7 +137,7 @@ def main():
             # Ręczny zapis surowego wyniku (dla Vision), bo save_ocr_to_txt robił to automatycznie dla Tesseracta
             if page_texts:
                 raw_text = "\n\n--- PAGE BREAK ---\n\n".join(page_texts)
-                output_dir = os.path.join(os.path.dirname(file), "ocr_results")
+                output_dir = os.path.join(current_dir, "ocr_results")
                 os.makedirs(output_dir, exist_ok=True)
                 txt_filename = os.path.splitext(os.path.basename(file))[0] + ".txt"
                 txt_path = os.path.join(output_dir, txt_filename)

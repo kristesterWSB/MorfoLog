@@ -7,7 +7,7 @@ class TestJsonComparison(unittest.TestCase):
     
     def setUp(self):
         """Konfiguracja ścieżek przed testem."""
-        # Ścieżka bazowa projektu
+        # Ścieżka bazowa projektu (C:/MorfoLog/engine-python)
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
         # NAZWA PLIKU DO TESTU (Dostosuj jeśli Twój plik nazywa się inaczej)
