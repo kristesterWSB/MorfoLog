@@ -341,3 +341,24 @@ $RECYCLE.BIN/
 /engine-python/cleaned_results/
 /engine-python/json_results/
 /engine-python/ocr_results/
+
+
+# --- .NET Core / ASP.NET Core ---
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userprefs
+*.launchSettings.json
+
+# --- Security ---
+# Ignorujemy plik konfiguracyjny z sekretami developerskimi
+appsettings.Development.json
+# Ale zostawiamy główny (szablon)
+!appsettings.json
+
+# --- Database ---
+*.db
+*.db-shm
+*.db-wal
