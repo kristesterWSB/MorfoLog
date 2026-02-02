@@ -16,6 +16,16 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Register HttpClient for making requests to the Python service
 builder.Services.AddHttpClient();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReact", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173") // Domyœlny port Vite
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -32,6 +42,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Enable CORS
+app.UseCors("AllowReact");
 
 // Map document endpoints
 app.MapDocumentEndpoints();
