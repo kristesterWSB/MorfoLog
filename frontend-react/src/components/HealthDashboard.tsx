@@ -53,13 +53,15 @@ export const HealthDashboard = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-1">
-                <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 sticky top-6">
-                    <h2 className="text-lg font-bold mb-4 text-gray-800">Wgraj wyniki (PDF)</h2>
-                    <UploadZone onUploadSuccess={fetchDocuments} />
+        <div className="space-y-8">
+            <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <h2 className="text-lg font-bold mb-4 text-gray-800">Wgraj wyniki (PDF)</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="md:col-span-2">
+                         <UploadZone onUploadSuccess={fetchDocuments} />
+                    </div>
                     
-                    <div className="mt-8">
+                    <div className="md:col-span-1 border-l border-gray-100 pl-8">
                         <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Ostatnie dokumenty</h3>
                         <div className="space-y-2">
                             {docs.slice(0, 5).map(doc => (
@@ -74,30 +76,28 @@ export const HealthDashboard = () => {
                             ))}
                         </div>
                     </div>
-                </section>
-            </div>
+                </div>
+            </section>
 
-            <div className="lg:col-span-2">
-                <section>
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-xl font-bold text-gray-800">Trendy Parametrów</h2>
-                        <button 
-                            onClick={fetchDocuments}
-                            className="px-3 py-1 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                        >
-                            Odśwież
-                        </button>
+            <section>
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-gray-800">Trendy Parametrów</h2>
+                    <button 
+                        onClick={fetchDocuments}
+                        className="px-3 py-1 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                        Odśwież
+                    </button>
+                </div>
+                
+                {loading && docs.length === 0 ? (
+                    <div className="flex justify-center items-center h-64 bg-white rounded-xl shadow-sm border border-gray-200">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
                     </div>
-                    
-                    {loading && docs.length === 0 ? (
-                        <div className="flex justify-center items-center h-64 bg-white rounded-xl shadow-sm border border-gray-200">
-                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
-                        </div>
-                    ) : (
-                        <TrendsCharts documents={docs} />
-                    )}
-                </section>
-            </div>
+                ) : (
+                    <TrendsCharts documents={docs} />
+                )}
+            </section>
         </div>
       </div>
     </div>
