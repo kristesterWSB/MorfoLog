@@ -123,7 +123,7 @@ def save_ocr_to_txt(pdf_path):
         # Zapis całego, surowego tekstu do pliku .txt dla celów logowania
         full_raw_text = "\n\n--- PAGE BREAK ---\n\n".join(page_texts)
         # Stwórz folder 'ocr_results' jeśli nie istnieje
-        output_dir = os.path.join(os.path.dirname(pdf_path), "ocr_results")
+        output_dir = os.path.join(os.path.dirname(pdf_path), "../ocr_results")
         os.makedirs(output_dir, exist_ok=True)
 
         # Stwórz ścieżkę do pliku w nowym folderze
@@ -164,7 +164,7 @@ if __name__ == "__main__":
             anonymized_text = guard.anonymize(page_texts)
 
             # Stwórz folder 'cleaned_results' jeśli nie istnieje
-            cleaned_output_dir = os.path.join(current_dir, "cleaned_results")
+            cleaned_output_dir = os.path.join(current_dir, "../cleaned_results")
             os.makedirs(cleaned_output_dir, exist_ok=True)
 
             # Stwórz ścieżkę do pliku w nowym folderze

@@ -1,5 +1,5 @@
 # ---KEYS and SECRETS---
-.env
+engine-python/.env
 config.json
 secrets.py
 venv/
@@ -14,7 +14,7 @@ __pycache__/
 outputs/
 poppler/
 tesseract/
-gcp_key.json
+engine-python/gcp_key.json
 
 # --- IDE (PyCharm / VS Code) ---
 .idea/
@@ -259,7 +259,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+engine-python/.env
 .venv
 env/
 venv/
@@ -338,3 +338,52 @@ $RECYCLE.BIN/
 /cleaned_results/
 /ocr_results/
 /json_results/
+/engine-python/cleaned_results/
+/engine-python/json_results/
+/engine-python/ocr_results/
+
+
+# --- .NET Core / ASP.NET Core ---
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userprefs
+*.launchSettings.json
+
+# --- Security ---
+# Ignorujemy plik konfiguracyjny z sekretami developerskimi
+appsettings.Development.json
+# Ale zostawiamy główny (szablon)
+!appsettings.json
+
+# --- Database ---
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

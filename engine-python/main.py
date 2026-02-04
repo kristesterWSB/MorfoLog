@@ -12,10 +12,7 @@ from google_vision_ocr import GoogleVisionOCR
 # --- KONFIGURACJA ---
 SAVE_JSON_ENABLED = True  # Ustaw na False, aby wyłączyć zapisywanie plików JSON
 USE_GOOGLE_VISION = True  # True = Google Vision API, False = Tesseract (lokalny)
-GCP_KEY_PATH = "gcp_key.json" # Ścieżka do klucza Google Cloud
-
-# Inicjalizacja analizatora (załaduje klucze z .env wewnątrz klasy)
-analyzer = MedicalAnalyzer()
+GCP_KEY_PATH = "gcp_key.json"  # Ścieżka do klucza Google Cloud (względem engine-python)
 
 # Mapa do normalizacji jednostek - standaryzuje popularne warianty i błędy OCR
 UNIT_NORMALIZATION_MAP = {
@@ -99,84 +96,114 @@ def _flatten_lab_results(data: dict) -> dict | None:
 
     return flat_data
 
+def process_single_file(file_path, vision_ocr_client, analyzer_instance):
+    """
+    Przetwarza pojedynczy plik: OCR -> Anonimizacja -> Analiza AI.
+    Zwraca surowy JSON z wynikami (nie spłaszczony).
+    """
+    page_texts = []
+    
+    # Krok 1: Wykonaj OCR (Vision lub Tesseract)
+    if USE_GOOGLE_VISION and vision_ocr_client:
+        print(f"Przetwarzanie Google Vision dla: {os.path.basename(file_path)}...")
+        page_texts = vision_ocr_client.extract_text(file_path)
+        
+        # Ręczny zapis surowego wyniku (dla Vision)
+        if page_texts:
+            raw_text = "\n\n--- PAGE BREAK ---\n\n".join(page_texts)
+            output_dir = os.path.join(os.path.dirname(file_path), "../engine-python/ocr_results")
+            os.makedirs(output_dir, exist_ok=True)
+            txt_filename = os.path.splitext(os.path.basename(file_path))[0] + ".txt"
+            txt_path = os.path.join(output_dir, txt_filename)
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write(raw_text)
+            print(f"✅ [Vision] Zapisano surowy OCR do: {txt_path}")
+    else:
+        # Stara metoda (Tesseract)
+        page_texts = save_ocr_to_txt(file_path)
+
+    if not page_texts:
+        return None
+
+    # Krok 2: Użyj klasy PrivacyGuard do anonimizacji tekstu
+    print(f"--- Anonimizacja wyniku dla: {os.path.basename(file_path)} ---")
+    guard = PrivacyGuard(USER_PROFILE)
+    anonymized_text = guard.anonymize(page_texts)
+    
+    # Zapisz oczyszczony tekst do pliku
+    cleaned_output_dir = os.path.join(os.path.dirname(file_path), "../engine-python/cleaned_results")
+    os.makedirs(cleaned_output_dir, exist_ok=True)
+    cleaned_filename = os.path.splitext(os.path.basename(file_path))[0] + "_cleaned.txt"
+    cleaned_path = os.path.join(cleaned_output_dir, cleaned_filename)
+    with open(cleaned_path, "w", encoding="utf-8") as f:
+        f.write(anonymized_text)
+    print(f"✅ Zapisano oczyszczony tekst do: {cleaned_path}")
+
+    # Krok 3: Analiza oczyszczonego tekstu przez AI
+    data = analyzer_instance.analyze_text(anonymized_text, provider='gemini')
+    
+    if data and SAVE_JSON_ENABLED:
+        json_output_dir = os.path.join(os.path.dirname(file_path), "../engine-python/json_results")
+        os.makedirs(json_output_dir, exist_ok=True)
+
+        json_filename = os.path.splitext(os.path.basename(file_path))[0] + ".json"
+        json_path = os.path.join(json_output_dir, json_filename)
+
+        try:
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            print(f"   [ZAPIS] Zapisano odpowiedź JSON do: {json_path}")
+        except Exception as e:
+            print(f"   [BŁĄD ZAPISU] Nie udało się zapisać pliku JSON: {e}")
+            
+    return data
 
 def main():
     print("Skanowanie folderu w poszukiwaniu plików PDF...")
+    # Zmieniono ścieżkę na katalog uploads w root projektu
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    files = glob.glob(os.path.join(current_dir, "*.pdf"))
+    project_root = os.path.dirname(current_dir)
+    uploads_dir = os.path.join(project_root, "uploads")
+    
+    # Upewnij się, że katalog uploads istnieje
+    if not os.path.exists(uploads_dir):
+        print(f"Katalog {uploads_dir} nie istnieje. Tworzę go...")
+        os.makedirs(uploads_dir)
+        
+    files = glob.glob(os.path.join(uploads_dir, "*.pdf"))
 
     print(f"Znaleziono plików: {len(files)}")
 
     # Inicjalizacja OCR (jeśli wybrano Google Vision)
     vision_ocr = None
     if USE_GOOGLE_VISION:
-        vision_ocr = GoogleVisionOCR(GCP_KEY_PATH, poppler_path=r'C:\poppler-25.12.0\Library\bin')
+        # Ścieżka do klucza GCP względem katalogu engine-python
+        key_path = os.path.abspath(os.path.join(current_dir, GCP_KEY_PATH))
+        
+        # Sprawdzenie czy plik klucza istnieje
+        if not os.path.exists(key_path):
+            print(f"BŁĄD: Nie znaleziono pliku klucza GCP pod ścieżką: {key_path}")
+            print("Upewnij się, że plik gcp_key.json znajduje się w katalogu engine-python.")
+            return
+
+        vision_ocr = GoogleVisionOCR(key_path, poppler_path=r'C:\poppler-25.12.0\Library\bin')
+
+    # Inicjalizacja analizatora
+    analyzer = MedicalAnalyzer()
 
     all_results = []
 
     for file in files:
-        page_texts = []
+        data = process_single_file(file, vision_ocr, analyzer)
         
-        # Krok 1: Wykonaj OCR (Vision lub Tesseract)
-        if USE_GOOGLE_VISION:
-            print(f"Przetwarzanie Google Vision dla: {os.path.basename(file)}...")
-            page_texts = vision_ocr.extract_text(file)
-            
-            # Ręczny zapis surowego wyniku (dla Vision), bo save_ocr_to_txt robił to automatycznie dla Tesseracta
-            if page_texts:
-                raw_text = "\n\n--- PAGE BREAK ---\n\n".join(page_texts)
-                output_dir = os.path.join(os.path.dirname(file), "ocr_results")
-                os.makedirs(output_dir, exist_ok=True)
-                txt_filename = os.path.splitext(os.path.basename(file))[0] + ".txt"
-                txt_path = os.path.join(output_dir, txt_filename)
-                with open(txt_path, "w", encoding="utf-8") as f:
-                    f.write(raw_text)
-                print(f"✅ [Vision] Zapisano surowy OCR do: {txt_path}")
+        if data:
+            # Krok 3.2: Spłaszczenie struktury JSON do formatu tabelarycznego
+            flat_data = _flatten_lab_results(data)
+            if flat_data:
+                print(f"Pobrane dane (spłaszczone): {flat_data}")
+                all_results.append(flat_data)
         else:
-            # Stara metoda (Tesseract) - funkcja sama zapisuje plik
-            page_texts = save_ocr_to_txt(file)
-
-        if page_texts:
-            # Krok 2: Użyj klasy PrivacyGuard do anonimizacji tekstu
-            print(f"--- Anonimizacja wyniku dla: {os.path.basename(file)} ---")
-            guard = PrivacyGuard(USER_PROFILE)
-            anonymized_text = guard.anonymize(page_texts)
-            
-            # Zapisz oczyszczony tekst do pliku (wymagane przez użytkownika)
-            cleaned_output_dir = os.path.join(current_dir, "cleaned_results")
-            os.makedirs(cleaned_output_dir, exist_ok=True)
-            cleaned_filename = os.path.splitext(os.path.basename(file))[0] + "_cleaned.txt"
-            cleaned_path = os.path.join(cleaned_output_dir, cleaned_filename)
-            with open(cleaned_path, "w", encoding="utf-8") as f:
-                f.write(anonymized_text)
-            print(f"✅ Zapisano oczyszczony tekst do: {cleaned_path}")
-
-            # Krok 3: Analiza oczyszczonego tekstu przez AI
-            # Domyślnie używamy Gemini, w razie błędu przełączy się na xAI
-            data = analyzer.analyze_text(anonymized_text, provider='gemini')
-            if data:
-                # Krok 3.1: Opcjonalny zapis odpowiedzi JSON do pliku
-                if SAVE_JSON_ENABLED:
-                    json_output_dir = os.path.join(current_dir, "json_results")
-                    os.makedirs(json_output_dir, exist_ok=True)
-
-                    json_filename = os.path.splitext(os.path.basename(file))[0] + ".json"
-                    json_path = os.path.join(json_output_dir, json_filename)
-
-                    try:
-                        with open(json_path, "w", encoding="utf-8") as f:
-                            json.dump(data, f, ensure_ascii=False, indent=4)
-                        print(f"   [ZAPIS] Zapisano odpowiedź JSON do: {json_path}")
-                    except Exception as e:
-                        print(f"   [BŁĄD ZAPISU] Nie udało się zapisać pliku JSON: {e}")
-
-                # Krok 3.2: Spłaszczenie struktury JSON do formatu tabelarycznego
-                flat_data = _flatten_lab_results(data)
-                if flat_data:
-                    print(f"Pobrane dane (spłaszczone): {flat_data}")
-                    all_results.append(flat_data)
-            else:
-                print(f"Nie udało się pobrać danych z pliku: {os.path.basename(file)}")
+            print(f"Nie udało się pobrać danych z pliku: {os.path.basename(file)}")
 
         # Przy tekście limity są luźniejsze, wystarczy krótkie opóźnienie
         time.sleep(2)
