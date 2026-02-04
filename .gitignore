@@ -1,4 +1,5 @@
 # ---KEYS and SECRETS---
+.env
 engine-python/.env
 config.json
 secrets.py
@@ -341,7 +342,7 @@ $RECYCLE.BIN/
 /engine-python/cleaned_results/
 /engine-python/json_results/
 /engine-python/ocr_results/
-
+uploads/
 
 # --- .NET Core / ASP.NET Core ---
 bin/
