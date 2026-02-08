@@ -8,6 +8,8 @@ using System.IO;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 namespace backend_dotnet.Endpoints;
 
@@ -37,10 +39,13 @@ public static class DocumentEndpoints
 {
     public static void MapDocumentEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/documents");
+        var group = app.MapGroup("/api/documents").RequireAuthorization();
 
-        group.MapPost("/upload", async (IFormFileCollection files, AppDbContext db, IHttpClientFactory httpClientFactory, IWebHostEnvironment env) =>
+        group.MapPost("/upload", async (IFormFileCollection files, AppDbContext db, IHttpClientFactory httpClientFactory, IWebHostEnvironment env, ClaimsPrincipal user) =>
         {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
             if (files == null || files.Count == 0)
             {
                 return Results.BadRequest("No files were uploaded.");
@@ -68,6 +73,7 @@ public static class DocumentEndpoints
                     FileName = file.FileName,
                     FilePath = absoluteFilePath,
                     Status = "Pending",
+                    UserId = userId,
                     UploadedAt = DateTime.UtcNow
                 };
                 documents.Add(document);
@@ -156,9 +162,12 @@ public static class DocumentEndpoints
 
         }).DisableAntiforgery();
 
-        group.MapGet("/", async (AppDbContext db) =>
+        group.MapGet("/", async (AppDbContext db, ClaimsPrincipal user) =>
         {
-            var documents = await db.Documents.ToListAsync();
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+            var documents = await db.Documents.Where(d => d.UserId == userId).ToListAsync();
             
             // Map the database models to the response DTOs for consistent output
             var responseDtos = documents.Select(doc => new MedicalDocumentResponse(

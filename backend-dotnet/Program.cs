@@ -1,13 +1,44 @@
 using backend_dotnet.Data;
 using backend_dotnet.Endpoints;
+using backend_dotnet.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        In = ParameterLocation.Header,
+        Description = "Please enter into field the word 'Bearer' following by space and JWT",
+        Name = "Authorization",
+        Type = SecuritySchemeType.ApiKey
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            new string[] {}
+        }
+    });
+});
+
+builder.Services.AddAuthorization();
+
+builder.Services.AddIdentityApiEndpoints<User>()
+    .AddEntityFrameworkStores<AppDbContext>();
 
 // Register AppDbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -46,7 +77,11 @@ app.UseHttpsRedirection();
 // Enable CORS
 app.UseCors("AllowReact");
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 // Map document endpoints
+app.MapGroup("/api/auth").MapIdentityApi<User>();
 app.MapDocumentEndpoints();
 
 app.Run();
