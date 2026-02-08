@@ -1,19 +1,19 @@
 import { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
+import { LogOut } from 'lucide-react';
+import axiosInstance from '../api/axios';
+import { useAuth } from '../context/AuthContext';
 import { UploadZone } from './UploadZone';
 import { TrendsCharts, type MedicalDocument } from './TrendsCharts';
-
-const API_URL = 'https://localhost:7219';
 
 export const HealthDashboard = () => {
   const [docs, setDocs] = useState<MedicalDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const { email, logout, setPage } = useAuth();
 
-  // Wrap your existing function in useCallback
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
-    axios.get(`${API_URL}/api/documents`)
+    axiosInstance.get(`/api/documents`)
       .then(res => {
         setDocs(res.data);
         setError("");
@@ -25,7 +25,7 @@ export const HealthDashboard = () => {
       .finally(() => {
         setLoading(false);
       });
-  }, []); // Add dependencies here if the function uses props or other state variables
+  }, []);
 
   useEffect(() => {
     fetchDocuments();
@@ -41,8 +41,18 @@ export const HealthDashboard = () => {
             </h1>
             <p className="text-gray-500 mt-2">Dashboard labs</p>
           </div>
-          <div className="text-sm text-gray-400">
-            {docs.length} dokumentów
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-600">👤 {email}</span>
+            <button
+              onClick={() => {
+                logout();
+                setPage('login');
+              }}
+              className="flex items-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Wyloguj
+            </button>
           </div>
         </header>
 

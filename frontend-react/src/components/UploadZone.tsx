@@ -1,8 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import axios from 'axios';
-
-const API_URL = 'https://localhost:7219';
+import axiosInstance from '../api/axios';
 
 interface UploadZoneProps {
   onUploadSuccess: () => void;
@@ -22,8 +20,8 @@ export const UploadZone = ({ onUploadSuccess }: UploadZoneProps) => {
       // Loop through files and upload each one
       const promises = acceptedFiles.map(file => {
         const formData = new FormData();
-        formData.append('file', file);
-        return axios.post(`${API_URL}/api/documents/upload`, formData, {
+        formData.append('files', file);
+        return axiosInstance.post(`/api/documents/upload`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         });
       });

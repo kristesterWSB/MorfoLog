@@ -1,9 +1,25 @@
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { HealthDashboard } from './components/HealthDashboard';
+import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
 
-function App() {
+const AppContent = () => {
+  const { currentPage } = useAuth();
 
   return (
-    <HealthDashboard />
+    <>
+      {currentPage === 'login' && <LoginPage />}
+      {currentPage === 'register' && <RegisterPage />}
+      {currentPage === 'dashboard' && <HealthDashboard />}
+    </>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
