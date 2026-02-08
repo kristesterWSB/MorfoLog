@@ -9,9 +9,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Register AppDbContext with SQLite
+// Register AppDbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
- options.UseSqlite("Data Source=health.db"));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Register HttpClient for making requests to the Python service
 builder.Services.AddHttpClient();
@@ -20,7 +20,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact", policy =>
     {
-        policy.WithOrigins("http://localhost:5173") // Domyœlny port Vite
+        policy.WithOrigins("http://localhost:5173") // Domyï¿½lny port Vite
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
