@@ -1,7 +1,39 @@
 @backend_dotnet_HostAddress = http://localhost:5180
+@token = CfDJ8ARioxF8T-VMvdfsPulmwHHx8cwJF4m2tE32tGZ8ROfcqN5LHf6BkKfRZ8Oe313elrFUR0o2UaShpKsq6l4Lt2E_Ql15cyffx4_VDUC_BQn-bGL4QC7wUdoe0Pri2ueuF0coo2K0bDkQTg4x6Oyy1Z5Ftu9SB-NO7KTxssui4IY-wnr4MShConq8S-d4LBJhSOrZ6DO07xwYC4w48R6wR0IMRBoF8sKvVjcGzOH2fAdJ5dN9PsvJ89gpcZffiAqIl-pN0MMWfKj_5Dl4BRHlnZxBVTQkN-vto-4IrKscHCm41xkQ4Ds_5_dmssToNRVqsV80w7vhbPp1o2bkapE7qH8n_sZiPMzdFQwK76hVGLHryWFUtJLg5tGS0NNoS5-RlooD_BwyKwVQB0ABv5EWLhdN_LmkRjTn8Vohh0-Uwy5hbOLs3L7Dd5r_ZCKTQOm1GJThd1qwO4RXysaGSW3f6itkYBXl4cg0uVrK3rjLl8yysQTZcfjwbgheuojZ---4GloXLLj6ovo35F7h1jNogf3J9F_hTKtXCPo3mD2LeLEp8FHoOQh0WAtYdnvuEeb-Y7nm6-mHz0GjNgLZfdCbga2-pADhS6YnHpln2AuGHcujck-_MLHaJOck_J_8X89xWhyTudki-q-SRgB5HUTy2f_c2VwbvRPDB7O1eJo_DpTPEsvPYMJpcgL7GWRmtyy_BA
 
-### Get all documents
-GET {{backend_dotnet_HostAddress}}/documents/
+### Register
+POST {{backend_dotnet_HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "Password123!"
+}
+
+### Login
+POST {{backend_dotnet_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "Password123!"
+}
+
+### Get all documents (Authorized)
+GET {{backend_dotnet_HostAddress}}/api/documents/
+Authorization: Bearer {{token}}
 Accept: application/json
+
+### Upload Document (Authorized)
+POST {{backend_dotnet_HostAddress}}/api/documents/upload
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="files"; filename="test.txt"
+Content-Type: text/plain
+
+This is a test medical document content.
+--boundary--
 
 ###
