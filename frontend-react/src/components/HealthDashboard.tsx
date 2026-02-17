@@ -42,7 +42,13 @@ export const HealthDashboard = () => {
             <p className="text-gray-500 mt-2">Dashboard labs</p>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">👤 {email}</span>
+            <span 
+              className="text-sm text-gray-600 cursor-pointer hover:text-blue-600 transition-colors"
+              onClick={() => setPage('profile')}
+              title="Edytuj Profil"
+            >
+              👤 {email}
+            </span>
             <button
               onClick={() => {
                 logout();

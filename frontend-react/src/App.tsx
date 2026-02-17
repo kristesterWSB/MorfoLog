@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext';
 import { HealthDashboard } from './components/HealthDashboard';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ProfilePage } from './pages/ProfilePage';
 
 const AppContent = () => {
   const { currentPage } = useAuth();
@@ -12,6 +13,7 @@ const AppContent = () => {
       {currentPage === 'login' && <LoginPage />}
       {currentPage === 'register' && <RegisterPage />}
       {currentPage === 'dashboard' && <HealthDashboard />}
+      {currentPage === 'profile' && <ProfilePage />}
     </>
   );
 };

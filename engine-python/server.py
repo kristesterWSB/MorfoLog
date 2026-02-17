@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import os
 import uvicorn
 from main import process_single_file, GCP_KEY_PATH, USE_GOOGLE_VISION
@@ -9,11 +9,18 @@ from analyzer import MedicalAnalyzer
 
 app = FastAPI(title="Morfolog Analysis Service")
 
-# Modele danych
-class AnalyzeRequest(BaseModel):
-    file_paths: List[str]  # Zmiana z pojedynczego stringa na listę stringów
+class PatientContext(BaseModel):
+    first_name: str
+    last_name: str
+    dob_fragment: str
+    address: Optional[str] = None
 
-# Zmienne globalne na instancje usług
+# Updated request model
+class AnalyzeRequest(BaseModel):
+    file_path: str
+    patient_context: PatientContext
+
+# Global services
 vision_ocr = None
 analyzer = None
 
@@ -21,10 +28,10 @@ analyzer = None
 async def startup_event():
     global vision_ocr, analyzer
     
-    # Inicjalizacja ścieżek
+    # Init paths
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Inicjalizacja OCR
+    # Init OCR
     if USE_GOOGLE_VISION:
         key_path = os.path.abspath(os.path.join(current_dir, GCP_KEY_PATH))
         if os.path.exists(key_path):
@@ -33,45 +40,44 @@ async def startup_event():
         else:
             print(f"BŁĄD: Nie znaleziono klucza GCP: {key_path}")
     
-    # Inicjalizacja Analyzera
+    # Init Analyzer
     print("Inicjalizacja MedicalAnalyzer...")
     analyzer = MedicalAnalyzer()
 
 @app.post("/analyze")
-async def analyze_files(request: AnalyzeRequest):
+async def analyze_file(request: AnalyzeRequest):
     results = []
-    errors = []
-
-    for path in request.file_paths:
-        if not os.path.exists(path):
-            errors.append({"file": path, "error": "File not found"})
-            continue
+    path = request.file_path
+    
+    if not os.path.exists(path):
+        return {"results": [{"file": path, "status": "error", "data": {"error": "File not found"}}]}
+    
+    try:
+        # Pass patient context to processing logic if needed
+        # For now, we just pass the file path as before, but in future use context
+        print(f"Processing {path} for patient {request.patient_context.first_name} {request.patient_context.last_name}")
         
-        try:
-            # Używamy funkcji z main.py
-            print(f"Przetwarzanie pliku: {path}")
-            result = process_single_file(path, vision_ocr, analyzer)
-            
-            if result:
-                results.append({
-                    "file": path,
-                    "status": "success",
-                    "data": result
-                })
-            else:
-                errors.append({"file": path, "error": "Analysis returned empty result"})
-                
-        except Exception as e:
-            print(f"Błąd przy przetwarzaniu {path}: {str(e)}")
-            errors.append({"file": path, "error": str(e)})
-
-    # Zwracamy raport zbiorczy
-    return {
-        "processed_count": len(results),
-        "error_count": len(errors),
-        "results": results,
-        "errors": errors
-    }
+        # Determine which OCR to use
+        ocr_engine = vision_ocr if vision_ocr else None
+        
+        # Process file
+        result_data = process_single_file(path, ocr_engine, analyzer, patient_context=request.patient_context)
+        
+        results.append({
+            "file": path,
+            "status": "success",
+            "data": result_data
+        })
+        
+    except Exception as e:
+        print(f"Error processing {path}: {str(e)}")
+        results.append({
+            "file": path,
+            "status": "error",
+            "data": {"error": str(e)}
+        })
+    
+    return {"results": results}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8088)
