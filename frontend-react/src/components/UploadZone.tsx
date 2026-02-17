@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import axiosInstance from '../api/axios';
 
@@ -9,12 +9,23 @@ interface UploadZoneProps {
 export const UploadZone = ({ onUploadSuccess }: UploadZoneProps) => {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [uploadedExams, setUploadedExams] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (uploadedExams.length > 0) {
+      const timer = setTimeout(() => {
+        setUploadedExams([]);
+      }, 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [uploadedExams]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
 
     setUploading(true);
     setMessage(null);
+    setUploadedExams([]);
 
     try {
       // Loop through files and upload each one
@@ -26,7 +37,34 @@ export const UploadZone = ({ onUploadSuccess }: UploadZoneProps) => {
         });
       });
 
-      await Promise.all(promises);
+      const responses = await Promise.all(promises);
+      
+      const newExams: string[] = [];
+      responses.forEach(res => {
+          if (res.data && Array.isArray(res.data)) {
+              res.data.forEach((doc: any) => {
+                  if (doc.analysisJson) {
+                      try {
+                          const analysis = typeof doc.analysisJson === 'string' ? JSON.parse(doc.analysisJson) : doc.analysisJson;
+                          if (analysis.examinations && Array.isArray(analysis.examinations)) {
+                              analysis.examinations.forEach((exam: any) => {
+                                  if (exam.examination_name) {
+                                      newExams.push(exam.examination_name);
+                                  }
+                              });
+                          }
+                      } catch (e) {
+                          console.error("Error parsing analysis JSON", e);
+                      }
+                  }
+              });
+          }
+      });
+
+      if (newExams.length > 0) {
+          setUploadedExams(newExams);
+      }
+
       setMessage(`Sukces! Wgrano ${acceptedFiles.length} plików.`);
       onUploadSuccess();
     } catch (error: any) {
@@ -66,6 +104,17 @@ export const UploadZone = ({ onUploadSuccess }: UploadZoneProps) => {
         <p className={`mt-4 font-medium ${message.startsWith("Błąd") ? "text-red-500" : "text-green-600"}`}>
           {message}
         </p>
+      )}
+
+      {uploadedExams.length > 0 && (
+        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded text-green-800 text-sm animate-in fade-in slide-in-from-top-2 duration-300">
+            <p className="font-bold mb-1">Dodano badania:</p>
+            <ul className="list-disc list-inside">
+                {uploadedExams.map((exam, i) => (
+                    <li key={i}>{exam}</li>
+                ))}
+            </ul>
+        </div>
       )}
     </div>
   );

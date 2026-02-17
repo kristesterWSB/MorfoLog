@@ -259,7 +259,24 @@ export const TrendsCharts = ({ documents }: TrendsChartsProps) => {
             });
         });
 
-        return dataMap;
+        // Sort sections by total number of results (descending)
+        const sortedSections = Array.from(dataMap.entries()).sort((a, b) => {
+            const countA = Array.from(a[1].values()).reduce((acc, curr) => acc + curr.length, 0);
+            const countB = Array.from(b[1].values()).reduce((acc, curr) => acc + curr.length, 0);
+            return countB - countA;
+        });
+
+        // Create a new Map with sorted sections and sorted parameters within sections (descending by results count)
+        const sortedDataMap = new Map<string, Map<string, ChartDataPoint[]>>();
+
+        sortedSections.forEach(([sectionName, sectionCharts]) => {
+            const sortedParams = Array.from(sectionCharts.entries()).sort((a, b) => {
+                return b[1].length - a[1].length;
+            });
+            sortedDataMap.set(sectionName, new Map(sortedParams));
+        });
+
+        return sortedDataMap;
     }, [documents]);
 
     if (chartsData.size === 0) {

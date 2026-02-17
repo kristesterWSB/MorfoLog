@@ -183,5 +183,36 @@ public static class DocumentEndpoints
 
             return Results.Ok(responseDtos);
         });
+
+        group.MapDelete("/{id}", async (Guid id, AppDbContext db, ClaimsPrincipal user) =>
+        {
+            var userIdString = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var userId)) return Results.Unauthorized();
+
+            var document = await db.Documents.FirstOrDefaultAsync(d => d.Id == id && d.UserId == userId);
+            
+            if (document == null)
+            {
+                return Results.NotFound();
+            }
+
+            // Optional: Delete physical file if needed
+            if (File.Exists(document.FilePath))
+            {
+                try 
+                {
+                    File.Delete(document.FilePath);
+                }
+                catch 
+                { 
+                    // Log error but continue with DB deletion
+                }
+            }
+
+            db.Documents.Remove(document);
+            await db.SaveChangesAsync();
+
+            return Results.NoContent();
+        });
     }
 }

@@ -15,7 +15,12 @@ export const HealthDashboard = () => {
     setLoading(true);
     axiosInstance.get(`/api/documents`)
       .then(res => {
-        setDocs(res.data);
+        const sortedDocs = (res.data as MedicalDocument[]).sort((a, b) => {
+          const dateA = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+          const dateB = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+          return dateB - dateA;
+        });
+        setDocs(sortedDocs);
         setError("");
       })
       .catch(err => {

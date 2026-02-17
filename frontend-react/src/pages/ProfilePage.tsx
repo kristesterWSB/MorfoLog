@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Save, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, FileText, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { profileSchema, type ProfileSchema } from '../schemas/profile';
 import axiosInstance from '../api/axios';
+import { type MedicalDocument } from '../components/TrendsCharts';
 
 export const ProfilePage = () => {
   const { setPage } = useAuth();
@@ -12,6 +13,8 @@ export const ProfilePage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [documents, setDocuments] = useState<MedicalDocument[]>([]);
+  const [docSuccess, setDocSuccess] = useState('');
 
   const {
     register,
@@ -23,20 +26,47 @@ export const ProfilePage = () => {
   });
 
   useEffect(() => {
-    const fetchProfile = async () => {
+    const fetchData = async () => {
       try {
-        const response = await axiosInstance.get('/api/profile');
-        reset(response.data);
+        const [profileRes, docsRes] = await Promise.all([
+            axiosInstance.get('/api/profile'),
+            axiosInstance.get('/api/documents')
+        ]);
+        
+        reset(profileRes.data);
+
+        const sortedDocs = (docsRes.data as MedicalDocument[]).sort((a, b) => {
+            const dateA = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+            const dateB = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+            return dateB - dateA;
+        });
+        setDocuments(sortedDocs);
+
       } catch (err) {
-        console.error('Failed to fetch profile:', err);
-        setError('Nie udało się pobrać danych profilu.');
+        console.error('Failed to fetch data:', err);
+        setError('Nie udało się pobrać danych.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchProfile();
+    fetchData();
   }, [reset]);
+
+  const handleDeleteDocument = async (id: string, fileName: string) => {
+      if (!confirm(`Czy na pewno chcesz usunąć dokument "${fileName}"?`)) return;
+      
+      try {
+          await axiosInstance.delete(`/api/documents/${id}`);
+          setDocuments(prev => prev.filter(d => d.id !== id));
+          setDocSuccess(`Dokument "${fileName}" został usunięty.`);
+          setTimeout(() => setDocSuccess(''), 5000);
+      } catch (err) {
+          console.error("Failed to delete document", err);
+          setError("Nie udało się usunąć dokumentu.");
+          setTimeout(() => setError(''), 5000);
+      }
+  };
 
   const onSubmit = async (data: ProfileSchema) => {
     setError('');
@@ -172,6 +202,56 @@ export const ProfilePage = () => {
               </button>
             </div>
           </form>
+        </div>
+
+        <div className="mt-8 bg-white rounded-lg shadow-sm p-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-gray-500" />
+                Twoje Dokumenty
+            </h2>
+
+            {docSuccess && (
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    {docSuccess}
+                </div>
+            )}
+            
+            {documents.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">Brak wgranych dokumentów.</p>
+            ) : (
+                <div className="space-y-3">
+                    {documents.map(doc => (
+                        <div key={doc.id} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg border border-gray-100 transition-colors group">
+                            <div className="flex items-center gap-3 overflow-hidden">
+                                <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                                    <FileText className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="font-medium text-gray-900 truncate" title={doc.fileName}>{doc.fileName}</p>
+                                    <p className="text-xs text-gray-500">
+                                        Dodano: {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleString() : 'Brak daty'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap
+                                    ${doc.status === 'Completed' ? 'bg-green-100 text-green-800' : 
+                                    doc.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                                    {doc.status}
+                                </span>
+                                <button 
+                                    onClick={() => handleDeleteDocument(doc.id, doc.fileName)}
+                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Usuń dokument"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
       </div>
     </div>
