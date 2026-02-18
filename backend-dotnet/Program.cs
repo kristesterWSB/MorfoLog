@@ -4,6 +4,7 @@ using backend_dotnet.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.OpenApi.Models;
+using backend_dotnet.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,12 +41,18 @@ builder.Services.AddAuthorization();
 builder.Services.AddIdentityApiEndpoints<User>()
     .AddEntityFrameworkStores<AppDbContext>();
 
+
 // Register AppDbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Register HttpClient for making requests to the Python service
-builder.Services.AddHttpClient();
+builder.Services.AddHttpClient<AiAnalysisService>(client =>
+{
+    // Default to localhost for development, can be overridden by env var or appsettings
+    var aiServiceUrl = builder.Configuration["AiServiceUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+});
 
 builder.Services.AddCors(options =>
 {

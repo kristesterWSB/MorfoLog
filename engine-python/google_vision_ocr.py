@@ -14,6 +14,41 @@ class GoogleVisionOCR:
         self.client = vision.ImageAnnotatorClient.from_service_account_json(key_path)
         self.poppler_path = poppler_path
 
+    def extract_text_from_bytes(self, file_content):
+        """
+        Extract text from file bytes (PDF or Image).
+        """
+        pages_text = []
+
+        try:
+            # Check if PDF by magic bytes
+            is_pdf = file_content.startswith(b'%PDF')
+            
+            if is_pdf:
+                # Convert PDF bytes to images using poppler
+                # Note: convert_from_bytes requires poppler_path
+                images = convert_from_path(io.BytesIO(file_content).read(), poppler_path=self.poppler_path)
+                
+                for img in images:
+                    # Convert PIL Image to bytes
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='JPEG')
+                    content = img_byte_arr.getvalue()
+                    
+                    # Process image
+                    text = self._process_image_content(content)
+                    pages_text.append(text)
+            else:
+                # Assume image if not PDF
+                text = self._process_image_content(file_content)
+                pages_text.append(text)
+            
+            return pages_text
+
+        except Exception as e:
+            print(f"Error processing bytes with Vision API: {e}")
+            return []
+
     def extract_text(self, file_path):
         """
         Główna metoda: obsługuje pliki PDF i obrazy, zwraca listę stron (tekst).

@@ -1,5 +1,3 @@
-import pandas as pd  # Biblioteka do tabel
-import matplotlib.pyplot as plt
 import glob
 import os
 import time
@@ -96,79 +94,96 @@ def _flatten_lab_results(data: dict) -> dict | None:
 
     return flat_data
 
-def process_single_file(file_path, vision_ocr_client, analyzer_instance, patient_context=None):
+def process_single_file(file_content, vision_ocr_client, analyzer_instance, patient_context=None):
     """
     Przetwarza pojedynczy plik: OCR -> Anonimizacja -> Analiza AI.
     Zwraca surowy JSON z wynikami (nie spłaszczony).
+    Accepts bytes or file path.
     """
     page_texts = []
     
+    # Determine if input is file path or bytes
+    is_bytes = isinstance(file_content, bytes)
+    file_identifier = "uploaded_file" if is_bytes else os.path.basename(file_content)
+
     # Krok 1: Wykonaj OCR (Vision lub Tesseract)
     if USE_GOOGLE_VISION and vision_ocr_client:
-        print(f"Przetwarzanie Google Vision dla: {os.path.basename(file_path)}...")
-        page_texts = vision_ocr_client.extract_text(file_path)
+        print(f"Przetwarzanie Google Vision dla: {file_identifier}...")
+        # Modified to accept bytes if available
+        if is_bytes:
+             page_texts = vision_ocr_client.extract_text_from_bytes(file_content)
+        else:
+             page_texts = vision_ocr_client.extract_text(file_content)
         
-        # Ręczny zapis surowego wyniku (dla Vision)
-        if page_texts:
+        # Ręczny zapis surowego wyniku (dla Vision) - skip for bytes or save to temp?
+        # For now, skipping file save for bytes input in cloud environment
+        if not is_bytes and page_texts:
             raw_text = "\n\n--- PAGE BREAK ---\n\n".join(page_texts)
-            output_dir = os.path.join(os.path.dirname(file_path), "../engine-python/ocr_results")
+            output_dir = os.path.join(os.path.dirname(file_content), "../engine-python/ocr_results")
             os.makedirs(output_dir, exist_ok=True)
-            txt_filename = os.path.splitext(os.path.basename(file_path))[0] + ".txt"
+            txt_filename = os.path.splitext(os.path.basename(file_content))[0] + ".txt"
             txt_path = os.path.join(output_dir, txt_filename)
             with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(raw_text)
             print(f"✅ [Vision] Zapisano surowy OCR do: {txt_path}")
     else:
-        # Stara metoda (Tesseract)
-        page_texts = save_ocr_to_txt(file_path)
+        # Stara metoda (Tesseract) - not supported for bytes yet without refactoring save_ocr_to_txt
+        if is_bytes:
+             print("Error: Tesseract path not supported for bytes in this refactor.")
+             return None
+        page_texts = save_ocr_to_txt(file_content)
 
     if not page_texts:
         return None
 
     # Krok 2: Użyj klasy PrivacyGuard do anonimizacji tekstu
-    print(f"--- Anonimizacja wyniku dla: {os.path.basename(file_path)} ---")
+    print(f"--- Anonimizacja wyniku dla: {file_identifier} ---")
     
     # Konstrukcja profilu na podstawie kontekstu pacjenta (jeśli dostępny)
+    # Convert Pydantic model to dict if needed, or access attributes directly
+    # Assuming patient_context is Pydantic model
+    
     current_profile = USER_PROFILE.copy()
     if patient_context:
+        # Check if it's pydantic model or dict
+        first_name = getattr(patient_context, 'first_name', None) or patient_context.get('first_name')
+        last_name = getattr(patient_context, 'last_name', None) or patient_context.get('last_name')
+        dob_fragment = getattr(patient_context, 'dob_fragment', None) or patient_context.get('dob_fragment')
+        address = getattr(patient_context, 'address', None) or patient_context.get('address')
+
         current_profile.update({
-            "name": patient_context.first_name,
-            "lastname": patient_context.last_name,
-            "dob_fragment": patient_context.dob_fragment,
-            "address": patient_context.address
+            "name": first_name,
+            "lastname": last_name,
+            "dob_fragment": dob_fragment,
+            "address": address
         })
-        print(f"Using provided patient context: {patient_context.first_name} {patient_context.last_name}")
+        print(f"Using provided patient context: {first_name} {last_name}")
 
     guard = PrivacyGuard(current_profile)
     anonymized_text = guard.anonymize(page_texts)
     
-    # Zapisz oczyszczony tekst do pliku
-    cleaned_output_dir = os.path.join(os.path.dirname(file_path), "../engine-python/cleaned_results")
-    os.makedirs(cleaned_output_dir, exist_ok=True)
-    cleaned_filename = os.path.splitext(os.path.basename(file_path))[0] + "_cleaned.txt"
-    cleaned_path = os.path.join(cleaned_output_dir, cleaned_filename)
-    with open(cleaned_path, "w", encoding="utf-8") as f:
-        f.write(anonymized_text)
-    print(f"✅ Zapisano oczyszczony tekst do: {cleaned_path}")
-
-    # Krok 3: Analiza oczyszczonego tekstu przez AI
-    data = analyzer_instance.analyze_text(anonymized_text, provider='gemini')
+    # Krok 3: Analiza medyczna przez LLM
+    print(f"--- Analiza LLM dla: {file_identifier} ---")
+    analysis_result = analyzer_instance.analyze_text(anonymized_text)
     
-    if data and SAVE_JSON_ENABLED:
-        json_output_dir = os.path.join(os.path.dirname(file_path), "../engine-python/json_results")
-        os.makedirs(json_output_dir, exist_ok=True)
-
-        json_filename = os.path.splitext(os.path.basename(file_path))[0] + ".json"
-        json_path = os.path.join(json_output_dir, json_filename)
-
-        try:
+    # Przetwarzanie wyniku
+    if analysis_result:
+        # Zapisz JSON z wynikami (jeśli nie bajty i włączone)
+        if SAVE_JSON_ENABLED and not is_bytes:
+            json_output_dir = os.path.join(os.path.dirname(file_content), "../engine-python/json_results")
+            os.makedirs(json_output_dir, exist_ok=True)
+            json_filename = os.path.splitext(os.path.basename(file_content))[0] + ".json"
+            json_path = os.path.join(json_output_dir, json_filename)
             with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-            print(f"   [ZAPIS] Zapisano odpowiedź JSON do: {json_path}")
-        except Exception as e:
-            print(f"   [BŁĄD ZAPISU] Nie udało się zapisać pliku JSON: {e}")
-            
-    return data
+                json.dump(analysis_result, f, indent=4, ensure_ascii=False)
+            print(f"✅ Zapisano wynik JSON do: {json_path}")
+
+        # Spłaszczanie wyników do tabeli (opcjonalne, zależne od potrzeb)
+        flat_result = _flatten_lab_results(analysis_result)
+        # return flat_result if flat_result else analysis_result
+        return analysis_result # Zwracamy pełny JSON zgodnie z oczekiwaniami serwera
+    
+    return None
 
 def main():
     print("Skanowanie folderu w poszukiwaniu plików PDF...")
