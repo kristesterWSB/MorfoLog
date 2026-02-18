@@ -96,7 +96,7 @@ def _flatten_lab_results(data: dict) -> dict | None:
 
     return flat_data
 
-def process_single_file(file_path, vision_ocr_client, analyzer_instance):
+def process_single_file(file_path, vision_ocr_client, analyzer_instance, patient_context=None):
     """
     Przetwarza pojedynczy plik: OCR -> Anonimizacja -> Analiza AI.
     Zwraca surowy JSON z wynikami (nie spłaszczony).
@@ -127,7 +127,19 @@ def process_single_file(file_path, vision_ocr_client, analyzer_instance):
 
     # Krok 2: Użyj klasy PrivacyGuard do anonimizacji tekstu
     print(f"--- Anonimizacja wyniku dla: {os.path.basename(file_path)} ---")
-    guard = PrivacyGuard(USER_PROFILE)
+    
+    # Konstrukcja profilu na podstawie kontekstu pacjenta (jeśli dostępny)
+    current_profile = USER_PROFILE.copy()
+    if patient_context:
+        current_profile.update({
+            "name": patient_context.first_name,
+            "lastname": patient_context.last_name,
+            "dob_fragment": patient_context.dob_fragment,
+            "address": patient_context.address
+        })
+        print(f"Using provided patient context: {patient_context.first_name} {patient_context.last_name}")
+
+    guard = PrivacyGuard(current_profile)
     anonymized_text = guard.anonymize(page_texts)
     
     # Zapisz oczyszczony tekst do pliku

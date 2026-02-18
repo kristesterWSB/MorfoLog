@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
+import type { RegisterSchema } from '../schemas/auth';
 
-export type AppPage = 'login' | 'register' | 'dashboard';
+export type AppPage = 'login' | 'register' | 'dashboard' | 'profile';
 
 export interface AuthContextType {
   isAuthenticated: boolean;
@@ -8,7 +9,7 @@ export interface AuthContextType {
   token: string | null;
   currentPage: AppPage;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (data: RegisterSchema) => Promise<void>;
   logout: () => void;
   setPage: (page: AppPage) => void;
 }

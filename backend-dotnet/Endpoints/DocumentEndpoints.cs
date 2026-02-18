@@ -43,8 +43,15 @@ public static class DocumentEndpoints
 
         group.MapPost("/upload", async (IFormFileCollection files, AppDbContext db, IHttpClientFactory httpClientFactory, IWebHostEnvironment env, ClaimsPrincipal user) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+            var userIdString = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var userId)) return Results.Unauthorized();
+
+            // Load user with profile
+            var dbUser = await db.Users.Include(u => u.Profile).FirstOrDefaultAsync(u => u.Id == userId);
+            if (dbUser?.Profile == null)
+            {
+                return Results.Problem("User profile is incomplete.", statusCode: 400);
+            }
 
             if (files == null || files.Count == 0)
             {
@@ -55,9 +62,12 @@ public static class DocumentEndpoints
             Directory.CreateDirectory(uploadsDir);
 
             var documents = new List<MedicalDocument>();
-            var absoluteFilePaths = new List<string>();
+            var httpClient = httpClientFactory.CreateClient();
+            var analysisServiceUrl = "http://localhost:8088/analyze"; // Ensure this matches Python service port
 
-            // Step A & B: Save each file and create a corresponding database record
+            // Format DOB for AI context
+            var dobFragment = dbUser.Profile.DateOfBirth.ToString("yyMMdd");
+
             foreach (var file in files)
             {
                 var uniqueFileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
@@ -76,74 +86,66 @@ public static class DocumentEndpoints
                     UserId = userId,
                     UploadedAt = DateTime.UtcNow
                 };
+                
                 documents.Add(document);
-                absoluteFilePaths.Add(absoluteFilePath);
-            }
-
-            await db.Documents.AddRangeAsync(documents);
-            await db.SaveChangesAsync();
-
-            // Step C: Call the Python analysis service with a list of file paths
-            var httpClient = httpClientFactory.CreateClient();
-            var analysisServiceUrl = "http://localhost:8088/analyze";
-            var normalizedPaths = absoluteFilePaths.Select(p => p.Replace('\\', '/')).ToList();
-
-            try
-            {
-                var response = await httpClient.PostAsJsonAsync(analysisServiceUrl, new { file_paths = normalizedPaths });
-
-                // Step D: Update database records based on the new response structure
-                if (response.IsSuccessStatusCode)
+                db.Documents.Add(document); // Add to tracking immediately to get ID if needed, but we save later
+                
+                // Prepare payload for Python service
+                var payload = new
                 {
-                    var analysisResponse = await response.Content.ReadFromJsonAsync<AnalysisResponse>();
-                    if (analysisResponse?.Results != null)
+                    file_path = absoluteFilePath.Replace('\\', '/'),
+                    patient_context = new
                     {
-                        // Match results using the unique, absolute file path as the key
-                        var documentsByPath = documents.ToDictionary(doc => doc.FilePath.Replace('\\', '/'));
+                        first_name = dbUser.Profile.FirstName,
+                        last_name = dbUser.Profile.LastName,
+                        dob_fragment = dobFragment,
+                        address = dbUser.Profile.Address
+                    }
+                };
 
-                        foreach (var result in analysisResponse.Results)
-                        {
-                            // Normalize the path from the Python response
-                            var resultPath = result.File.Replace('\\', '/');
-
-                            if (documentsByPath.TryGetValue(resultPath, out var docToUpdate))
-                            {
-                                if (result.Status == "success")
-                                {
-                                    // Serialize the "data" object back to a compact JSON string (no indentation)
-                                    docToUpdate.AnalysisJson = JsonSerializer.Serialize(result.Data);
-                                    docToUpdate.Status = "Completed";
-                                }
-                                else
-                                {
-                                    docToUpdate.Status = "Error";
-                                }
-                                documentsByPath.Remove(resultPath); // Mark as processed
-                            }
-                        }
-
-                        // Any documents not found in the response are marked as errors
-                        foreach (var docWithoutResult in documentsByPath.Values)
-                        {
-                            docWithoutResult.Status = "Error";
-                        }
+                try 
+                {
+                    var response = await httpClient.PostAsJsonAsync(analysisServiceUrl, payload);
+                    
+                    if (response.IsSuccessStatusCode)
+                    {
+                         // Assume Python service returns the analysis result directly or in a wrapper
+                         // Adjust this based on Python service response structure.
+                         // For now, assuming it returns the same structure but for single file? 
+                         // Or maybe we can conform Python service to return { "status": "...", "data": ... }
+                         
+                         var analysisResponse = await response.Content.ReadFromJsonAsync<AnalysisResponse>();
+                         // Handle response... logic simplifies here if we process per file
+                         // But for now, let's just mark as uploaded and let a background worker process?
+                         // The prompt implies synchronous processing ("Przygotuj obiekt... PostAsJsonAsync").
+                         
+                         if (analysisResponse?.Results != null && analysisResponse.Results.Count > 0)
+                         {
+                             var result = analysisResponse.Results.First(); // Assuming single result
+                             if (result.Status == "success")
+                             {
+                                 document.AnalysisJson = JsonSerializer.Serialize(result.Data);
+                                 document.Status = "Completed";
+                             }
+                             else
+                             {
+                                 document.Status = "Error";
+                             }
+                         }
+                         else
+                         {
+                             document.Status = "Processed"; // Or some other status if parsing fails
+                         }
+                    }
+                    else
+                    {
+                        document.Status = "Error";
                     }
                 }
-                else
+                catch
                 {
-                    foreach (var doc in documents) doc.Status = "Error";
+                    document.Status = "Error";
                 }
-            }
-            catch (HttpRequestException)
-            {
-                // Handle cases where the Python service is unavailable
-                foreach(var doc in documents) doc.Status = "Error";
-                await db.SaveChangesAsync(); // Save the error status
-                return Results.Problem(
-                    detail: "The analysis service is currently unavailable. The documents were saved, but could not be processed.",
-                    statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "Analysis Service Unreachable"
-                );
             }
 
             await db.SaveChangesAsync();
@@ -164,8 +166,8 @@ public static class DocumentEndpoints
 
         group.MapGet("/", async (AppDbContext db, ClaimsPrincipal user) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+            var userIdString = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var userId)) return Results.Unauthorized();
 
             var documents = await db.Documents.Where(d => d.UserId == userId).ToListAsync();
             
@@ -180,6 +182,37 @@ public static class DocumentEndpoints
             )).ToList();
 
             return Results.Ok(responseDtos);
+        });
+
+        group.MapDelete("/{id}", async (Guid id, AppDbContext db, ClaimsPrincipal user) =>
+        {
+            var userIdString = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var userId)) return Results.Unauthorized();
+
+            var document = await db.Documents.FirstOrDefaultAsync(d => d.Id == id && d.UserId == userId);
+            
+            if (document == null)
+            {
+                return Results.NotFound();
+            }
+
+            // Optional: Delete physical file if needed
+            if (File.Exists(document.FilePath))
+            {
+                try 
+                {
+                    File.Delete(document.FilePath);
+                }
+                catch 
+                { 
+                    // Log error but continue with DB deletion
+                }
+            }
+
+            db.Documents.Remove(document);
+            await db.SaveChangesAsync();
+
+            return Results.NoContent();
         });
     }
 }

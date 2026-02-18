@@ -12,7 +12,7 @@ class TestJsonComparison(unittest.TestCase):
         
         # NAZWA PLIKU DO TESTU (Dostosuj jeśli Twój plik nazywa się inaczej)
         # Zakładamy, że main.py przetworzył 'sample_ocr.pdf' i zapisał 'sample_ocr.json'
-        self.filename = "wyniki-31_12_25_morfologia.json"
+        self.filename = "be8f0f89-6786-4988-bdcb-f594b5a52e90.json"
         
         # Ścieżka do wygenerowanego pliku (przez main.py)
         self.generated_path = os.path.join(self.project_root, "json_results", self.filename)

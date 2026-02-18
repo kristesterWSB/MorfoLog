@@ -81,6 +81,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // Map document endpoints
+app.MapAuthEndpoints();
+app.MapProfileEndpoints();
 app.MapGroup("/api/auth").MapIdentityApi<User>();
 app.MapDocumentEndpoints();
 

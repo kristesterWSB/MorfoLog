@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import axios from 'axios';
 import { AuthContext, type AppPage } from './AuthContext';
+import type { RegisterSchema } from '../schemas/auth';
 
 const API_URL = 'https://localhost:7219';
 
@@ -40,21 +41,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const register = useCallback(async (email: string, password: string) => {
+  const register = useCallback(async (data: RegisterSchema) => {
     try {
-      const response = await axios.post(`${API_URL}/api/auth/register`, {
-        email,
-        password,
+      await axios.post(`${API_URL}/api/auth/register-extended`, {
+        email: data.email,
+        password: data.password,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        address: data.address,
+        dateOfBirth: data.dateOfBirth,
       });
-
-      const { accessToken } = response.data;
-      localStorage.setItem('token', accessToken);
-      localStorage.setItem('email', email);
-
-      setToken(accessToken);
-      setEmail(email);
-      setIsAuthenticated(true);
-      setCurrentPage('dashboard');
+      // Redirect to login after successful registration
+      setCurrentPage('login');
     } catch (error) {
       console.error('Registration failed:', error);
       throw error;
