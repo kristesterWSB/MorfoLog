@@ -1,7 +1,7 @@
 import os
 import io
 from google.cloud import vision
-from pdf2image import convert_from_path
+from pdf2image import convert_from_path, convert_from_bytes
 from collections import defaultdict
 
 class GoogleVisionOCR:
@@ -27,7 +27,7 @@ class GoogleVisionOCR:
             if is_pdf:
                 # Convert PDF bytes to images using poppler
                 # Note: convert_from_bytes requires poppler_path
-                images = convert_from_path(io.BytesIO(file_content).read(), poppler_path=self.poppler_path)
+                images = convert_from_bytes(file_content, poppler_path=self.poppler_path)
                 
                 for img in images:
                     # Convert PIL Image to bytes

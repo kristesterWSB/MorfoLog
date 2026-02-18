@@ -201,10 +201,10 @@ class MedicalAnalyzer:
 
     def _process_response(self, raw_text):
         """Czyści markdown i zwraca sparsowany obiekt JSON."""
-        print(f"--- SUROWA ODPOWIEDŹ Z API ---\n{raw_text}\n-----------------------------")
+        print(f"--- LLM returned an object ---")
         clean_json = re.sub(r'```json|```', '', raw_text).strip()
         if not clean_json:
-            raise json.JSONDecodeError("Otrzymano pustą odpowiedź z API po oczyszczeniu.", "", 0)
+            raise json.JSONDecodeError("LLM returned empty or malformed JSON", "", 0)
         
         data = json.loads(clean_json)
         return data

@@ -4,12 +4,12 @@ import time
 import json
 import re
 from analyzer import MedicalAnalyzer  # Import nowej klasy
-from ocr_cleaner import PrivacyGuard, USER_PROFILE, save_ocr_to_txt
+from ocr_cleaner import PrivacyGuard, USER_PROFILE
 from google_vision_ocr import GoogleVisionOCR
 
 # --- KONFIGURACJA ---
 SAVE_JSON_ENABLED = True  # Ustaw na False, aby wyłączyć zapisywanie plików JSON
-USE_GOOGLE_VISION = True  # True = Google Vision API, False = Tesseract (lokalny)
+USE_GOOGLE_VISION = True  # ZAWSZE TRUE - Tesseract usunięty
 GCP_KEY_PATH = "gcp_key.json"  # Ścieżka do klucza Google Cloud (względem engine-python)
 
 # Mapa do normalizacji jednostek - standaryzuje popularne warianty i błędy OCR
@@ -106,8 +106,8 @@ def process_single_file(file_content, vision_ocr_client, analyzer_instance, pati
     is_bytes = isinstance(file_content, bytes)
     file_identifier = "uploaded_file" if is_bytes else os.path.basename(file_content)
 
-    # Krok 1: Wykonaj OCR (Vision lub Tesseract)
-    if USE_GOOGLE_VISION and vision_ocr_client:
+    # Krok 1: Wykonaj OCR (Vision only)
+    if vision_ocr_client:
         print(f"Przetwarzanie Google Vision dla: {file_identifier}...")
         # Modified to accept bytes if available
         if is_bytes:
@@ -127,11 +127,8 @@ def process_single_file(file_content, vision_ocr_client, analyzer_instance, pati
                 f.write(raw_text)
             print(f"✅ [Vision] Zapisano surowy OCR do: {txt_path}")
     else:
-        # Stara metoda (Tesseract) - not supported for bytes yet without refactoring save_ocr_to_txt
-        if is_bytes:
-             print("Error: Tesseract path not supported for bytes in this refactor.")
-             return None
-        page_texts = save_ocr_to_txt(file_content)
+        print("Błąd: Brak klienta Google Vision OCR. Tesseract został usunięty.")
+        return None
 
     if not page_texts:
         return None
@@ -157,7 +154,7 @@ def process_single_file(file_content, vision_ocr_client, analyzer_instance, pati
             "dob_fragment": dob_fragment,
             "address": address
         })
-        print(f"Using provided patient context: {first_name} {last_name}")
+        print(f"Using provided patient context.") # USUNIĘTO PII
 
     guard = PrivacyGuard(current_profile)
     anonymized_text = guard.anonymize(page_texts)

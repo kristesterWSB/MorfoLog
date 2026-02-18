@@ -56,7 +56,7 @@ async def analyze_file(
         except (json.JSONDecodeError, TypeError) as e:
             raise HTTPException(status_code=400, detail=f"Invalid JSON in patient_context: {e}")
 
-        print(f"Processing uploaded file {filename} for patient {context_dict.get('first_name')}")
+        print(f"Processing uploaded file {filename}") # USUNIĘTO PII
         
         # Read file content into memory
         file_content = await file.read()
