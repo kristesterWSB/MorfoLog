@@ -33,6 +33,10 @@ services:
       # Mounting the key from engine-python/gcp_key.json to /app/gcp_key.json in container
       # This matches the working directory in Dockerfile (/app)
       - ./engine-python/gcp_key.json:/app/gcp_key.json:ro
+      # Logs - OCR and JSON results
+      - ./engine-python/ocr_results:/app/ocr_results
+      - ./engine-python/cleaned_results:/app/cleaned_results
+      - ./engine-python/json_results:/app/json_results
 
   # --- BACKEND (.NET) ---
   backend:

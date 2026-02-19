@@ -70,7 +70,8 @@ async def analyze_file(
             file_content, 
             ocr_engine, 
             analyzer, 
-            patient_context=context_dict
+            patient_context=context_dict,
+            original_filename=filename
         )
         
         results = []
