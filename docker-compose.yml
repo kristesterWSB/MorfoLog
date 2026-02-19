@@ -8,7 +8,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: morfolog
     ports:
       - "5432:5432"
@@ -51,7 +51,7 @@ services:
       - ai-engine
     environment:
       # Connection string uses service name "db" instead of "localhost"
-      - ConnectionStrings__DefaultConnection=Host=db;Database=morfolog;Username=postgres;Password=admin
+      - ConnectionStrings__DefaultConnection=Host=db;Database=morfolog;Username=postgres;Password=${POSTGRES_PASSWORD}
       # AI Service address is "http://service-name:port"
       - AiServiceUrl=http://ai-engine:8000
       - ASPNETCORE_ENVIRONMENT=Development

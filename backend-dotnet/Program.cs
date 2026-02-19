@@ -58,7 +58,12 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact", policy =>
     {
-        policy.WithOrigins("http://localhost:5173") // Domy�lny port Vite
+        // Allow localhost for development + origins from configuration (Cloud)
+        var allowedOrigins = builder.Configuration.GetSection("AllowedCorsOrigins").Get<string[]>() ?? Array.Empty<string>();
+        var origins = new List<string> { "http://localhost:5173" };
+        origins.AddRange(allowedOrigins);
+
+        policy.WithOrigins(origins.ToArray())
               .AllowAnyMethod()
               .AllowAnyHeader();
     });

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { AuthContext, type AppPage } from './AuthContext';
 import type { RegisterSchema } from '../schemas/auth';
 
-const API_URL = 'http://localhost:8080';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
