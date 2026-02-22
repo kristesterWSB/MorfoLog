@@ -5,13 +5,20 @@ from pdf2image import convert_from_path, convert_from_bytes
 from collections import defaultdict
 
 class GoogleVisionOCR:
-    def __init__(self, key_path, poppler_path=None):
+    def __init__(self, key_path=None, poppler_path=None):
         """
         Inicjalizuje klienta Google Vision API.
-        :param key_path: Ścieżka do pliku JSON z kluczem konta serwisowego.
-        :param poppler_path: Ścieżka do binariów Poppler (wymagane dla PDF).
+        :param key_path: Ścieżka do pliku JSON z kluczem (opcjonalne w Cloud Run).
+        :param poppler_path: Ścieżka do binariów Poppler.
         """
-        self.client = vision.ImageAnnotatorClient.from_service_account_json(key_path)
+        if key_path and os.path.exists(key_path):
+            self.client = vision.ImageAnnotatorClient.from_service_account_json(key_path)
+            print(f"Vision OCR: Użyto klucza z pliku: {key_path}")
+        else:
+            # Użyj Application Default Credentials (ADC) - działa w Cloud Run automatycznie
+            self.client = vision.ImageAnnotatorClient()
+            print("Vision OCR: Użyto Application Default Credentials (ADC)")
+            
         self.poppler_path = poppler_path
 
     def extract_text_from_bytes(self, file_content):

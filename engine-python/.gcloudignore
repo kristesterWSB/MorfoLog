@@ -1,0 +1,12 @@
+.gcloudignore
+.git
+.gitignore
+__pycache__/
+.venv/
+.env
+.idea/
+tests/
+json_results/
+ocr_results/
+cleaned_results/
+gcp_key.json

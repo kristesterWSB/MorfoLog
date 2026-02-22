@@ -1,4 +1,10 @@
 import os
+import sys
+# DEBUG: Print environment info
+print(f"Current Working Directory: {os.getcwd()}")
+print(f"Files in CWD: {os.listdir('.')}")
+print(f"PYTHONPATH: {sys.path}")
+
 import uvicorn
 import json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -33,14 +39,25 @@ async def startup_event():
         is_linux = os.name == 'posix'
         poppler_path = None if is_linux else r'C:\poppler-25.12.0\Library\bin'
 
+        # W Cloud Run plik klucza nie jest wymagany (ADC), ale lokalnie może być
         if os.path.exists(key_path):
             print(f"Inicjalizacja Google Vision z kluczem: {key_path}")
             vision_ocr = GoogleVisionOCR(key_path, poppler_path=poppler_path)
         else:
-            print(f"BŁĄD: Nie znaleziono klucza GCP: {key_path}")
+            print(f"Brak pliku klucza {key_path}. Próba użycia Application Default Credentials (ADC)...")
+            try:
+                vision_ocr = GoogleVisionOCR(key_path=None, poppler_path=poppler_path)
+                print("Inicjalizacja Google Vision (ADC) powiodła się.")
+            except Exception as e:
+                print(f"BŁĄD: Nie udało się zainicjować Google Vision (ADC): {e}")
+                vision_ocr = None
     
     print("Inicjalizacja MedicalAnalyzer...")
     analyzer = MedicalAnalyzer()
+
+@app.get("/")
+async def health_check():
+    return {"status": "ok", "service": "Morfolog Analysis Service"}
 
 @app.post("/analyze")
 async def analyze_file(
@@ -99,4 +116,5 @@ async def analyze_file(
         }]}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

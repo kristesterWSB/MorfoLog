@@ -1,39 +1,27 @@
 # Folder: engine-python/Dockerfile
 
-# Stage 1: Builder
-FROM python:3.12-slim as builder
-
-WORKDIR /app
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    python3-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
-
-# Stage 2: Runtime
+# Use Python 3.12 (simple single-stage build to avoid path/permission issues in Cloud Run)
 FROM python:3.12-slim
 
+# Prevent Python from writing pyc files to disc (as Cloud Run file system is read-only)
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
-# Install runtime system dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     poppler-utils \
     ffmpeg libsm6 libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed python packages from builder
-COPY --from=builder /root/.local /root/.local
-
-# Update PATH to include installed packages
-ENV PATH=/root/.local/bin:$PATH
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY . .
 
-# Start server
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start server. Use the PORT environment variable if provided by the platform (Cloud Run sets PORT).
+# We use python server.py because server.py handles PORT env var and binds to 0.0.0.0
+CMD ["python", "server.py"]
