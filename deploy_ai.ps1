@@ -1,5 +1,6 @@
 # Skrypt do wdrażania usługi AI Engine na Google Cloud Run
-
+#build_image command 
+# gcloud builds submit --tag europe-central2-docker.pkg.dev gen-lang-client-0852605338/morfolog/ai-engine:test4 ./engine-python
 $PROJECT_ID = "gen-lang-client-0852605338"
 $REGION = "europe-central2"
 $IMAGE_TAG = "test4"

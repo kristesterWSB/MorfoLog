@@ -43,8 +43,14 @@ builder.Services.AddIdentityApiEndpoints<User>()
 
 
 // Register AppDbContext with PostgreSQL
+var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+if (string.IsNullOrEmpty(connectionString))
+{
+    connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
 
 // Register HttpClient for making requests to the Python service
 builder.Services.AddHttpClient<AiAnalysisService>(client =>
@@ -78,13 +84,13 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+app.UseSwagger();
+app.UseSwaggerUI();
+
 if (app.Environment.IsDevelopment())
 {
- app.UseSwagger();
- app.UseSwaggerUI();
+    app.UseHttpsRedirection();
 }
-
-app.UseHttpsRedirection();
 
 // Enable CORS
 app.UseCors("AllowReact");
