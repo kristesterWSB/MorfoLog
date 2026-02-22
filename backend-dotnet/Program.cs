@@ -4,6 +4,7 @@ using backend_dotnet.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.OpenApi.Models;
+using backend_dotnet.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,18 +41,35 @@ builder.Services.AddAuthorization();
 builder.Services.AddIdentityApiEndpoints<User>()
     .AddEntityFrameworkStores<AppDbContext>();
 
+
 // Register AppDbContext with PostgreSQL
+var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+if (string.IsNullOrEmpty(connectionString))
+{
+    connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
 
 // Register HttpClient for making requests to the Python service
-builder.Services.AddHttpClient();
+builder.Services.AddHttpClient<AiAnalysisService>(client =>
+{
+    // Default to localhost for development, can be overridden by env var or appsettings
+    var aiServiceUrl = builder.Configuration["AiServiceUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+});
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact", policy =>
     {
-        policy.WithOrigins("http://localhost:5173") // Domy�lny port Vite
+        // Allow localhost for development + origins from configuration (Cloud)
+        var allowedOrigins = builder.Configuration.GetSection("AllowedCorsOrigins").Get<string[]>() ?? Array.Empty<string>();
+        var origins = new List<string> { "http://localhost:5173" };
+        origins.AddRange(allowedOrigins);
+
+        policy.WithOrigins(origins.ToArray())
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
@@ -66,13 +84,13 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+app.UseSwagger();
+app.UseSwaggerUI();
+
 if (app.Environment.IsDevelopment())
 {
- app.UseSwagger();
- app.UseSwaggerUI();
+    // app.UseHttpsRedirection();
 }
-
-app.UseHttpsRedirection();
 
 // Enable CORS
 app.UseCors("AllowReact");

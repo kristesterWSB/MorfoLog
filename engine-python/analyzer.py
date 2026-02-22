@@ -4,8 +4,6 @@ import re
 import typing_extensions as typing
 from dotenv import load_dotenv
 from google import genai
-from openai import OpenAI
-from openai.types.chat import ChatCompletionMessageParam
 
 # Ładujemy zmienne środowiskowe
 load_dotenv()
@@ -58,7 +56,6 @@ MEDICAL_REPORT_SCHEMA = {
 class MedicalAnalyzer:
     def __init__(self):
         self.gemini_key = os.getenv("GEMINI_API_KEY")
-        self.xai_key = os.getenv("XAI_API_KEY")
 
         # Inicjalizacja klienta Gemini (google-genai)
         if self.gemini_key:
@@ -67,19 +64,11 @@ class MedicalAnalyzer:
             self.gemini_client = None
             print("⚠️ Brak klucza GEMINI_API_KEY")
 
-        # Inicjalizacja klienta xAI (przez bibliotekę OpenAI)
-        if self.xai_key:
-            self.xai_client = OpenAI(
-                api_key=self.xai_key,
-                base_url="https://api.x.ai/v1"
-            )
-        else:
-            self.xai_client = None
-            print("⚠️ Brak klucza XAI_API_KEY")
-
         # Wspólny System Prompt (bez instrukcji JSON, bo używamy Structured Output)
         self.system_prompt = r"""
         Jesteś ekspertem medycznym AI. Twoim celem jest bezbłędna konwersja surowego OCR na ustrukturyzowane dane.
+        
+        WAŻNE: Używaj polskich znaków (UTF-8) bezpośrednio w JSON (np. "ł", "ą", "ś"), NIE używaj escape sequences (np. "\u0142").
 
         ANALIZA DOKUMENTU (Specyfika tego pliku):
         1. **Artefakty w Jednostkach:** OCR błędnie interpretuje jednostki jako wzory matematyczne, np. "$tys/\mu l^{*}$" lub "$mg/dl^{*}$".
@@ -126,33 +115,20 @@ class MedicalAnalyzer:
         3. Nie modyfikuj sztucznie nazwy ("name") dopiskami w nawiasach - aplikacja rozróżni je po jednostce.
         """
 
-    def analyze_text(self, text, provider='gemini'):
+    def analyze_text(self, text):
         """
-        Główna funkcja analizująca.
-        provider: 'gemini' lub 'xai'.
-        Automatycznie przełącza się na drugiego dostawcę w przypadku błędu.
+        Główna funkcja analizująca przy użyciu Gemini.
         """
         if not text:
             return None
 
-        primary_func = self._query_gemini if provider == 'gemini' else self._query_xai
-        fallback_func = self._query_xai if provider == 'gemini' else self._query_gemini
-        fallback_name = 'xAI' if provider == 'gemini' else 'Gemini'
-
         try:
-            print(f"   [AI] Próba analizy przez: {provider.upper()}...")
-            raw_json = primary_func(text)
+            print(f"   [AI] Próba analizy przez: GEMINI...")
+            raw_json = self._query_gemini(text)
             return self._process_response(raw_json)
         except Exception as e:
-            print(f"⚠️ Błąd dostawcy {provider.upper()}: {e}")
-            print(f"🔄 Przełączanie na: {fallback_name}...")
-
-            try:
-                raw_json = fallback_func(text)
-                return self._process_response(raw_json)
-            except Exception as e2:
-                print(f"❌ Błąd zapasowego dostawcy {fallback_name}: {e2}")
-                return None
+            print(f"⚠️ Błąd analizy Gemini: {e}")
+            return None
 
     def _query_gemini(self, text):
         if not self.gemini_client:
@@ -181,30 +157,18 @@ class MedicalAnalyzer:
 
         return response.text
 
-    def _query_xai(self, text):
-        if not self.xai_client:
-            raise Exception("Klient xAI nie jest skonfigurowany.")
-
-        # Dla xAI musimy dodać instrukcję JSON, bo usunęliśmy ją z głównego promptu
-        xai_prompt = self.system_prompt + "\n\nOUTPUT FORMAT: JSON matching {meta: {date_examination: str}, examinations: [{examination_name: str, code_icd: str, results: [{name: str, value: float, unit: str, range_min: float|null, range_max: float|null, flag: str|null}]}]}"
-
-        messages: list[ChatCompletionMessageParam] = [
-            {"role": "system", "content": xai_prompt},
-            {"role": "user", "content": text},
-        ]
-
-        response = self.xai_client.chat.completions.create(
-            model="grok-beta",
-            messages=messages
-        )
-        return response.choices[0].message.content
-
     def _process_response(self, raw_text):
         """Czyści markdown i zwraca sparsowany obiekt JSON."""
-        print(f"--- SUROWA ODPOWIEDŹ Z API ---\n{raw_text}\n-----------------------------")
+        print(f"--- LLM returned an object ---")
         clean_json = re.sub(r'```json|```', '', raw_text).strip()
+        
+        # FIX: Naprawa brakujących backslashy przy unicode (np. "u0142" -> "\u0142")
+        # Jeśli widzimy "u" po którym są 4 cyfry hex, a przed nim NIE MA backslasha, dodajemy go.
+        # To naprawia błędy generowane przez niektóre wersje bibliotek/modeli.
+        clean_json = re.sub(r'(?<!\\)u([0-9a-fA-F]{4})', r'\\u\1', clean_json)
+
         if not clean_json:
-            raise json.JSONDecodeError("Otrzymano pustą odpowiedź z API po oczyszczeniu.", "", 0)
+            raise json.JSONDecodeError("LLM returned empty or malformed JSON", "", 0)
         
         data = json.loads(clean_json)
         return data

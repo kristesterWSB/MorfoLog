@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using backend_dotnet.Services;
 
 namespace backend_dotnet.Endpoints;
 
@@ -41,7 +42,7 @@ public static class DocumentEndpoints
     {
         var group = app.MapGroup("/api/documents").RequireAuthorization();
 
-        group.MapPost("/upload", async (IFormFileCollection files, AppDbContext db, IHttpClientFactory httpClientFactory, IWebHostEnvironment env, ClaimsPrincipal user) =>
+        group.MapPost("/upload", async (IFormFileCollection files, AppDbContext db, AiAnalysisService aiService, IWebHostEnvironment env, ClaimsPrincipal user) =>
         {
             var userIdString = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var userId)) return Results.Unauthorized();
@@ -62,8 +63,6 @@ public static class DocumentEndpoints
             Directory.CreateDirectory(uploadsDir);
 
             var documents = new List<MedicalDocument>();
-            var httpClient = httpClientFactory.CreateClient();
-            var analysisServiceUrl = "http://localhost:8088/analyze"; // Ensure this matches Python service port
 
             // Format DOB for AI context
             var dobFragment = dbUser.Profile.DateOfBirth.ToString("yyMMdd");
@@ -73,6 +72,7 @@ public static class DocumentEndpoints
                 var uniqueFileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
                 var absoluteFilePath = Path.Combine(uploadsDir, uniqueFileName);
 
+                // Save file locally (optional now, but good for backup/download)
                 await using (var stream = new FileStream(absoluteFilePath, FileMode.Create))
                 {
                     await file.CopyToAsync(stream);
@@ -88,62 +88,34 @@ public static class DocumentEndpoints
                 };
                 
                 documents.Add(document);
-                db.Documents.Add(document); // Add to tracking immediately to get ID if needed, but we save later
-                
-                // Prepare payload for Python service
-                var payload = new
-                {
-                    file_path = absoluteFilePath.Replace('\\', '/'),
-                    patient_context = new
-                    {
-                        first_name = dbUser.Profile.FirstName,
-                        last_name = dbUser.Profile.LastName,
-                        dob_fragment = dobFragment,
-                        address = dbUser.Profile.Address
-                    }
-                };
+                db.Documents.Add(document); 
+
+                // Send to AI Service
+                var context = new Services.PatientContext(
+                    dbUser.Profile.FirstName,
+                    dbUser.Profile.LastName,
+                    dobFragment,
+                    dbUser.Profile.Address
+                );
 
                 try 
                 {
-                    var response = await httpClient.PostAsJsonAsync(analysisServiceUrl, payload);
-                    
-                    if (response.IsSuccessStatusCode)
+                    using var fileStream = file.OpenReadStream();
+                    var analysisResult = await aiService.AnalyzeDocumentAsync(fileStream, file.FileName, context);
+
+                    if (analysisResult != null && analysisResult.Status == "success")
                     {
-                         // Assume Python service returns the analysis result directly or in a wrapper
-                         // Adjust this based on Python service response structure.
-                         // For now, assuming it returns the same structure but for single file? 
-                         // Or maybe we can conform Python service to return { "status": "...", "data": ... }
-                         
-                         var analysisResponse = await response.Content.ReadFromJsonAsync<AnalysisResponse>();
-                         // Handle response... logic simplifies here if we process per file
-                         // But for now, let's just mark as uploaded and let a background worker process?
-                         // The prompt implies synchronous processing ("Przygotuj obiekt... PostAsJsonAsync").
-                         
-                         if (analysisResponse?.Results != null && analysisResponse.Results.Count > 0)
-                         {
-                             var result = analysisResponse.Results.First(); // Assuming single result
-                             if (result.Status == "success")
-                             {
-                                 document.AnalysisJson = JsonSerializer.Serialize(result.Data);
-                                 document.Status = "Completed";
-                             }
-                             else
-                             {
-                                 document.Status = "Error";
-                             }
-                         }
-                         else
-                         {
-                             document.Status = "Processed"; // Or some other status if parsing fails
-                         }
+                        document.AnalysisJson = JsonSerializer.Serialize(analysisResult.Data);
+                        document.Status = "Completed";
                     }
                     else
                     {
                         document.Status = "Error";
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Console.WriteLine($"Error processing file: {ex.Message}");
                     document.Status = "Error";
                 }
             }
