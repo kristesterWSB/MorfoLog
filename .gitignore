@@ -388,3 +388,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+deploy_gcp.ps1
