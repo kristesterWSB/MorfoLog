@@ -22,7 +22,7 @@ services:
       dockerfile: Dockerfile
     container_name: morfolog-ai
     ports:
-      - "8000:8000"
+      - "8088:8000"
     # Assuming .env is in engine-python folder based on file listing
     env_file:
       - ./engine-python/.env  
