@@ -77,11 +77,14 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
-}
+// TYMCZASOWO ZAKOMENTOWANE:
+// Skoro wgraliśmy dane ręcznie, EF Core nie może wgrać InitialCreate 
+// bo tabele takie jak AspNetRoles już istnieją w Supabase.
+// using (var scope = app.Services.CreateScope())
+// {
+//     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+//     db.Database.Migrate(); 
+// }
 
 // Configure the HTTP request pipeline.
 app.UseSwagger();

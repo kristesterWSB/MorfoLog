@@ -5,11 +5,10 @@
 
 $PROJECT_ID = "gen-lang-client-0852605338"
 $REGION = "europe-central2"
-$IMAGE_TAG = "test-dotnet2" 
+$IMAGE_TAG = "supabase2" 
 $REPO_NAME = "morfolog"
 $IMAGE_URI = "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/backend:$IMAGE_TAG"
 $SERVICE_NAME = "morfolog-backend"
-$DB_INSTANCE_NAME = "morfolog-db-prod"
 
 Write-Host "Pobieranie konfiguracji..." -ForegroundColor Cyan
 
@@ -21,14 +20,6 @@ if (-not $AI_SERVICE_URL) {
 } else {
     Write-Host " -> Wykryto AI Service URL: $AI_SERVICE_URL"
 }
-
-# 2. Pobierz Connection Name bazy danych (potrzebne do połączenia z Cloud SQL)
-$INSTANCE_CONNECTION_NAME = gcloud sql instances describe $DB_INSTANCE_NAME --format="value(connectionName)"
-if (-not $INSTANCE_CONNECTION_NAME) {
-    Write-Host "Błąd: Nie znaleziono instancji Cloud SQL o nazwie $DB_INSTANCE_NAME" -ForegroundColor Red
-    exit 1
-}
-Write-Host " -> Wykryto SQL Connection: $INSTANCE_CONNECTION_NAME"
 
 Write-Host "---------------------------------------------------"
 Write-Host "Wdrażanie usługi $SERVICE_NAME..." -ForegroundColor Green
@@ -43,7 +34,6 @@ gcloud run deploy $SERVICE_NAME `
     --memory 512Mi `
     --set-secrets="DB_CONNECTION_STRING=DB_CONNECTION_STRING:latest" `
     --set-env-vars "AiServiceUrl=$AI_SERVICE_URL,ASPNETCORE_ENVIRONMENT=Production" `
-    --add-cloudsql-instances $INSTANCE_CONNECTION_NAME `
     --allow-unauthenticated
 
 if ($LASTEXITCODE -eq 0) {
