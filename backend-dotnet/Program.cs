@@ -2,8 +2,9 @@ using backend_dotnet.Data;
 using backend_dotnet.Endpoints;
 using backend_dotnet.Models;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using System.Text.Json;
 using backend_dotnet.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -51,6 +52,9 @@ if (string.IsNullOrEmpty(connectionString))
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>("Supabase-Database");
 
 // Register HttpClient for making requests to the Python service
 builder.Services.AddHttpClient<AiAnalysisService>(client =>
@@ -106,5 +110,21 @@ app.MapAuthEndpoints();
 app.MapProfileEndpoints();
 app.MapGroup("/api/auth").MapIdentityApi<User>();
 app.MapDocumentEndpoints();
+
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var response = new
+        {
+            status = report.Status.ToString(),
+            database = report.Entries.TryGetValue("Supabase-Database", out var dbEntry) 
+                ? dbEntry.Status.ToString() 
+                : "Unknown"
+        };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
+});
 
 app.Run();

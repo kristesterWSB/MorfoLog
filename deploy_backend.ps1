@@ -1,11 +1,11 @@
 # Skrypt do wdrażania usługi Backend .NET na Google Cloud Run
 #
 # Przykładowe polecenie do zbudowania obrazu (uruchom przed wdrożeniem jeśli masz zmiany w kodzie):
-# gcloud builds submit --tag europe-central2-docker.pkg.dev/gen-lang-client-0852605338/morfolog/backend:latest ./backend-dotnet
+# gcloud builds submit --tag europe-central2-docker.pkg.dev/gen-lang-client-0852605338/morfolog/backend:supabase3 ./backend-dotnet
 
 $PROJECT_ID = "gen-lang-client-0852605338"
 $REGION = "europe-central2"
-$IMAGE_TAG = "supabase2" 
+$IMAGE_TAG = "supabase3" 
 $REPO_NAME = "morfolog"
 $IMAGE_URI = "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/backend:$IMAGE_TAG"
 $SERVICE_NAME = "morfolog-backend"
