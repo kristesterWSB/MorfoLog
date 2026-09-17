@@ -3,8 +3,8 @@ import os
 import glob
 import re
 
-# --- DOMYŚLNY PROFIL UŻYTKOWNIKA ---
-# Dane są teraz przekazywane dynamicznie w kontekście każdego żądania (zamiast z .env)
+# --- DEFAULT USER PROFILE ---
+# Data is now passed dynamically in the context of each request (instead of from .env)
 USER_PROFILE = {
     "name": None,
     "lastname": None,
@@ -14,50 +14,50 @@ USER_PROFILE = {
 
 def anonymize_pesel_by_dob(text: str, dob_fragment: str) -> str:
     """
-    Anonimizuje PESEL w tekście na podstawie fragmentu daty urodzenia (RRMMDD).
-    Wyszukuje ciąg 11 cyfr zaczynający się od dob_fragment i zamienia ostatnie 5 cyfr na XXXXX.
+    Anonymizes PESEL in text based on a date of birth fragment (YYMMDD).
+    Searches for an 11-digit sequence starting with dob_fragment and replaces the whole with [REDACTED_PESEL].
     """
     if not dob_fragment or not re.match(r'^\d{6}$', dob_fragment):
         return text
 
-    # Szukamy ciągu 11 cyfr, który zaczyna się od dob_fragment
-    # \b zapewnia, że nie łapiemy środka dłuższego ciągu
+    # We search for an 11-digit sequence that starts with dob_fragment
+    # \b ensures we don't catch the middle of a longer sequence
     pattern = r'\b(' + re.escape(dob_fragment) + r')\d{5}\b'
     
-    # Zamieniamy cały PESEL na [REDACTED_PESEL]
+    # Replace the whole PESEL with [REDACTED_PESEL]
     return re.sub(pattern, '[REDACTED_PESEL]', text)
 
 class PrivacyGuard:
     """
-    Klasa do anonimizacji danych osobowych z surowego tekstu OCR, używająca precyzyjnego zastępowania słów.
+    Class for anonymizing personal data from raw OCR text, using precise word replacement.
     """
     def __init__(self, user_profile: dict):
         self.profile = user_profile
 
-        # Wartości do bezpośredniego, precyzyjnego zastąpienia
+        # Values for direct, precise replacement
         self.direct_values = [
             self.profile.get("name"),
             self.profile.get("lastname"),
             self.profile.get("pesel"),
         ]
         
-        # Podziel adres na części, aby usunąć np. samą nazwę ulicy, numer, miasto, kod
+        # Split address into parts to remove e.g. street name, number, city, zip
         address = self.profile.get("address", "")
         if address:
-            # Rozbijamy adres na słowa, usuwając znaki interpunkcyjne
-            # np. "CEGLANA 63/76, 40-514 KATOWICE" -> ["CEGLANA", "63", "76", "40", "514", "KATOWICE"]
+            # We split the address into words, removing punctuation marks
+            # e.g. "CEGLANA 63/76, 40-514 KATOWICE" -> ["CEGLANA", "63", "76", "40", "514", "KATOWICE"]
             address_parts = re.split(r'[\s,/.-]+', address)
-            # Filtrujemy: usuwamy puste i bardzo krótkie (np. 1-znakowe) części, chyba że to cyfry
+            # We filter: remove empty and very short (e.g. 1-character) parts, unless they are digits
             self.direct_values.extend([part for part in address_parts if len(part) > 1])
 
-        # Usuń puste wpisy (None) i ewentualne duplikaty, sortuj od najdłuższych (żeby nie zamieniać podciągów)
+        # Remove empty entries (None) and potential duplicates, sort from longest (so as not to replace substrings)
         self.direct_values = [str(v) for v in self.direct_values if v]
         self.direct_values = list(set(self.direct_values))
-        # Sortowanie malejąco po długości jest ważne, aby np. "Katowice" usunąć przed "Kat" (gdyby istniało)
+        # Sorting descending by length is important so that e.g. "Katowice" is removed before "Kat" (if it existed)
         self.direct_values.sort(key=len, reverse=True)
 
     def anonymize(self, page_texts: list[str]) -> str:
-        """Działa wieloetapowo, precyzyjnie zastępując słowa i czyszcząc szum tylko na ostatniej stronie."""
+        """Operates in multiple stages, precisely replacing words and cleaning noise only on the last page."""
         
         processed_pages = []
         num_pages = len(page_texts)
@@ -66,45 +66,45 @@ class PrivacyGuard:
             is_last_page = (i == num_pages - 1)
             anonymized_text = page_text
             
-            # Etap 1: Bezpośrednie zastąpienie precyzyjnych danych (Imię, Nazwisko, PESEL, fragmenty adresu)
+            # Stage 1: Direct replacement of precise data (First name, Last name, PESEL, address fragments)
             for value in self.direct_values:
-                # Dla bardzo krótkich słów (np. nr domu "1") używamy ścisłych granic słowa \b
-                # Dla dłuższych (np. ulica "Ceglana") pozwalamy na dopasowanie nawet jeśli OCR coś dokleił, 
-                # ale nadal staramy się unikać zastępowania wewnątrz innych słów (np. "Kat" w "Katapulta").
-                # Użyjmy podejścia: \bWord\b jest bezpieczne.
-                # Jeśli anonimizacja nie działa, to znaczy że OCR zwrócił np. "CEGLANA," (z przecinkiem) i \b to łapie.
-                # Ale jeśli OCR zwrócił "CEGLANAKATOWICE" (sklejone), to \b nie zadziała.
+                # For very short words (e.g. house no. "1") we use strict word boundaries \b
+                # For longer ones (e.g. street "Ceglana") we allow matching even if OCR appended something, 
+                # but we still try to avoid replacing inside other words (e.g. "Cat" in "Catapult").
+                # Let's use the approach: \bWord\b is safe.
+                # If anonymization doesn't work, it means OCR returned e.g. "CEGLANA," (with comma) and \b catches it.
+                # But if OCR returned "CEGLANAKATOWICE" (glued), then \b won't work.
                 
                 if len(value) > 3:
-                    # Dla długich słów, próbujemy być bardziej agresywni, ale z ostrożnością
+                    # For long words, we try to be more aggressive, but with caution
                     pattern = re.escape(value)
                 else:
                     pattern = r'\b' + re.escape(value) + r'\b'
                 
                 anonymized_text = re.sub(pattern, '[REDACTED]', anonymized_text, flags=re.IGNORECASE)
 
-            # Etap 1.5: Anonimizacja PESELu na podstawie fragmentu daty urodzenia (jeśli dostępny)
+            # Stage 1.5: PESEL anonymization based on date of birth fragment (if available)
             dob_fragment = self.profile.get("dob_fragment")
             if dob_fragment:
                 anonymized_text = anonymize_pesel_by_dob(anonymized_text, dob_fragment)
 
-            # Etap 2: Czyszczenie za pomocą dodatkowych, ogólnych reguł Regex
-            # Usuń każdy pozostały 11-cyfrowy ciąg (potencjalny PESEL)
+            # Stage 2: Cleaning using additional, general Regex rules
+            # Remove any remaining 11-digit sequence (potential PESEL)
             anonymized_text = re.sub(r'\b\d{11}\b', '[REDACTED_PESEL]', anonymized_text)
             
-            # Usuń kody pocztowe (np. 40-514)
+            # Remove zip codes (e.g. 40-514)
             anonymized_text = re.sub(r'\b\d{2}-\d{3}\b', '[REDACTED_ZIP]', anonymized_text)
             
-            # Zastąp słowa-klucze ról (np. "Pacjent:"), a nie całe linie
+            # Replace role keywords (e.g. "Pacjent:"), not entire lines
             anonymized_text = re.sub(r'\b(Pacjent|Odbiorca|Lekarz)\b\s*:?', '[REDACTED_ROLE_INFO]', anonymized_text, flags=re.IGNORECASE)
 
-            # Anonimizuj datę urodzenia - obsługuje "Data ur", "Data urodzenia", "Data urodz." itp.
+            # Anonymize date of birth - handles "Data ur", "Data urodzenia", "Data urodz." etc.
             anonymized_text = re.sub(r'\bData\s+(?:ur\.?|urod[a-z]*)\s*[:\s]*\d{4}-\d{2}-\d{2}', '[REDACTED_DOB]', anonymized_text, flags=re.IGNORECASE)
 
             lines = anonymized_text.split('\n')
             current_page_processed_lines = lines
 
-            # Etap 3: Usuwanie linii z metadanymi - TYLKO DLA OSTATNIEJ STRONY
+            # Stage 3: Removing metadata lines - ONLY FOR THE LAST PAGE
             if is_last_page:
                 noise_patterns = [
                     r'przyjęcia prób',

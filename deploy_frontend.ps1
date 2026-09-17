@@ -1,62 +1,62 @@
-# Skrypt do budowania i wdrażania frontendu na Firebase oraz aktualizacji backendu
-# Upewnij się, że masz zainstalowane firebase-tools: npm install -g firebase-tools
-# Upewnij się, że jesteś zalogowany: firebase login
-# Upewnij się, że zainicjowałeś projekt: cd frontend-react; firebase init hosting
+# Script for building and deploying the frontend to Firebase and updating the backend
+# Make sure you have firebase-tools installed: npm install -g firebase-tools
+# Make sure you are logged in: firebase login
+# Make sure you have initialized the project: cd frontend-react; firebase init hosting
 
 $FrontendPath = "frontend-react"
 $BackendServiceName = "morfolog-backend"
 $Region = "europe-central2"
 
-Write-Host "--- Rozpoczynam wdrażanie Frontend ---" -ForegroundColor Cyan
+Write-Host "--- Starting Frontend deployment ---" -ForegroundColor Cyan
 
-# 1. Sprawdź czy .env.production istnieje i ma poprawny URL backendu
+# 1. Check if .env.production exists and has the correct backend URL
 if (-not (Test-Path "$FrontendPath\.env.production")) {
-    Write-Host "Błąd: Brak pliku .env.production! Uruchom skrypt konfiguracji." -ForegroundColor Red
+    Write-Host "Error: Missing .env.production file! Run the configuration script." -ForegroundColor Red
     exit 1
 }
 
-# 2. Budowanie aplikacji React
-Write-Host "2. Budowanie aplikacji React..." -ForegroundColor Cyan
+# 2. Building React application
+Write-Host "2. Building React application..." -ForegroundColor Cyan
 Push-Location $FrontendPath
 npm install
 npm run build
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Błąd budowania aplikacji." -ForegroundColor Red
+    Write-Host "Application build error." -ForegroundColor Red
     Pop-Location
     exit 1
 }
 
-# 3. Wdrożenie do Firebase
-Write-Host "3. Wdrażanie do Firebase..." -ForegroundColor Cyan
-# Używamy --json aby łatwiej wyciągnąć URL, ale firebase deploy nie zawsze zwraca czysty JSON na stdout
-# Więc po prostu uruchomimy i poprosimy użytkownika o sprawdzenie URL, albo spróbujemy go znaleźć.
+# 3. Deployment to Firebase
+Write-Host "3. Deploying to Firebase..." -ForegroundColor Cyan
+# We use --json to easily extract the URL, but firebase deploy doesn't always return clean JSON to stdout
+# So we'll just run it and ask the user to check the URL, or try to find it.
 firebase deploy --only hosting
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Błąd wdrożenia do Firebase. Upewnij się, że wykonałeś 'firebase init' w folderze frontend-react." -ForegroundColor Red
+    Write-Host "Firebase deployment error. Make sure you ran 'firebase init' in the frontend-react folder." -ForegroundColor Red
     Pop-Location
     exit 1
 }
 Pop-Location
 
 Write-Host "`n---------------------------------------------------" -ForegroundColor Green
-Write-Host "Frontend wdrożony!" -ForegroundColor Green
-Write-Host "Teraz musisz zaktualizować backend, aby akceptował połączenia z nowej domeny." -ForegroundColor Yellow
-Write-Host "Wpisz poniżej adres URL (Hosting URL) z powyższego logu (np. https://twoj-projekt.web.app):"
-$FrontendUrl = Read-Host "URL Frontendu"
+Write-Host "Frontend deployed!" -ForegroundColor Green
+Write-Host "Now you need to update the backend to accept connections from the new domain." -ForegroundColor Yellow
+Write-Host "Enter the URL (Hosting URL) from the log above below (e.g. https://your-project.web.app):"
+$FrontendUrl = Read-Host "Frontend URL"
 
 if (-not [string]::IsNullOrWhiteSpace($FrontendUrl)) {
-    Write-Host "Aktualizuję konfigurację CORS w backendzie ($BackendServiceName)..." -ForegroundColor Cyan
-    # Aktualizujemy zmienną środowiskową AllowedCorsOrigins__0
+    Write-Host "Updating CORS configuration in the backend ($BackendServiceName)..." -ForegroundColor Cyan
+    # Updating the environment variable AllowedCorsOrigins__0
     gcloud run services update $BackendServiceName `
         --region $Region `
         --update-env-vars "AllowedCorsOrigins__0=$FrontendUrl"
     
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Backend zaktualizowany! CORS powinien działać." -ForegroundColor Green
+        Write-Host "Backend updated! CORS should work." -ForegroundColor Green
     } else {
-        Write-Host "Błąd aktualizacji backendu." -ForegroundColor Red
+        Write-Host "Backend update error." -ForegroundColor Red
     }
 } else {
-    Write-Host "Pominięto aktualizację backendu." -ForegroundColor Yellow
+    Write-Host "Skipped backend update." -ForegroundColor Yellow
 }
