@@ -39,20 +39,20 @@ async def startup_event():
         is_linux = os.name == 'posix'
         poppler_path = None if is_linux else r'C:\poppler-25.12.0\Library\bin'
 
-        # W Cloud Run plik klucza nie jest wymagany (ADC), ale lokalnie może być
+        # In Cloud Run, the key file is not required (ADC), but locally it might be
         if os.path.exists(key_path):
-            print(f"Inicjalizacja Google Vision z kluczem: {key_path}")
+            print(f"Initializing Google Vision with key: {key_path}")
             vision_ocr = GoogleVisionOCR(key_path, poppler_path=poppler_path)
         else:
-            print(f"Brak pliku klucza {key_path}. Próba użycia Application Default Credentials (ADC)...")
+            print(f"Missing key file {key_path}. Attempting to use Application Default Credentials (ADC)...")
             try:
                 vision_ocr = GoogleVisionOCR(key_path=None, poppler_path=poppler_path)
-                print("Inicjalizacja Google Vision (ADC) powiodła się.")
+                print("Google Vision (ADC) initialization successful.")
             except Exception as e:
-                print(f"BŁĄD: Nie udało się zainicjować Google Vision (ADC): {e}")
+                print(f"ERROR: Failed to initialize Google Vision (ADC): {e}")
                 vision_ocr = None
     
-    print("Inicjalizacja MedicalAnalyzer...")
+    print("Initializing MedicalAnalyzer...")
     analyzer = MedicalAnalyzer()
 
 @app.get("/")
@@ -73,7 +73,7 @@ async def analyze_file(
         except (json.JSONDecodeError, TypeError) as e:
             raise HTTPException(status_code=400, detail=f"Invalid JSON in patient_context: {e}")
 
-        print(f"Processing uploaded file {filename}") # USUNIĘTO PII
+        print(f"Processing uploaded file {filename}") # REMOVED PII
         
         # Read file content into memory
         file_content = await file.read()

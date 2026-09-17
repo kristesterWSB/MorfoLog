@@ -3,20 +3,20 @@ import os
 import time
 import json
 import re
-from analyzer import MedicalAnalyzer  # Import nowej klasy
+from analyzer import MedicalAnalyzer  # Import new class
 from ocr_cleaner import PrivacyGuard, USER_PROFILE
 from google_vision_ocr import GoogleVisionOCR
 
-# --- KONFIGURACJA ---
-SAVE_JSON_ENABLED = True  # Ustaw na False, aby wyłączyć zapisywanie plików JSON
-USE_GOOGLE_VISION = True  # ZAWSZE TRUE - Tesseract usunięty
-GCP_KEY_PATH = "gcp_key.json"  # Ścieżka do klucza Google Cloud (względem engine-python)
+# --- CONFIGURATION ---
+SAVE_JSON_ENABLED = True  # Set to False to disable saving JSON files
+USE_GOOGLE_VISION = True  # ALWAYS TRUE - Tesseract removed
+GCP_KEY_PATH = "gcp_key.json"  # Path to Google Cloud key (relative to engine-python)
 
 
 def process_single_file(file_content, vision_ocr_client, analyzer_instance, patient_context=None, original_filename=None):
     """
-    Przetwarza pojedynczy plik: OCR -> Anonimizacja -> Analiza AI.
-    Zwraca surowy JSON z wynikami (nie spłaszczony).
+    Processes a single file: OCR -> Anonymization -> AI Analysis.
+    Returns raw JSON with results (not flattened).
     Accepts bytes or file path.
     """
     page_texts = []
@@ -26,16 +26,16 @@ def process_single_file(file_content, vision_ocr_client, analyzer_instance, pati
     # Use provided filename for logs, fallback to generic
     file_identifier = original_filename if (is_bytes and original_filename) else ("uploaded_file" if is_bytes else os.path.basename(file_content))
 
-    # Krok 1: Wykonaj OCR (Vision only)
+    # Step 1: Perform OCR (Vision only)
     if vision_ocr_client:
-        print(f"Przetwarzanie Google Vision dla: {file_identifier}...")
+        print(f"Processing Google Vision for: {file_identifier}...")
         # Modified to accept bytes if available
         if is_bytes:
              page_texts = vision_ocr_client.extract_text_from_bytes(file_content)
         else:
              page_texts = vision_ocr_client.extract_text(file_content)
         
-        # Ręczny zapis surowego wyniku (dla Vision)
+        # Manual save of raw result (for Vision)
         # Modified: Always save OCR results for debugging, even for bytes input
         if page_texts:
             output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ocr_results")
@@ -54,20 +54,20 @@ def process_single_file(file_content, vision_ocr_client, analyzer_instance, pati
             try:
                 with open(txt_path, "w", encoding="utf-8") as f:
                     f.write("\n\n--- PAGE BREAK ---\n\n".join(page_texts))
-                print(f"✅ [Vision] Zapisano surowy OCR do: {txt_path}")
+                print(f"✅ [Vision] Saved raw OCR to: {txt_path}")
             except Exception as e:
-                print(f"⚠️ Błąd zapisu OCR: {e}")
+                print(f"⚠️ OCR save error: {e}")
     else:
-        print("Błąd: Brak klienta Google Vision OCR. Tesseract został usunięty.")
+        print("Error: Missing Google Vision OCR client. Tesseract was removed.")
         return None
 
     if not page_texts:
         return None
 
-    # Krok 2: Użyj klasy PrivacyGuard do anonimizacji tekstu
-    print(f"--- Anonimizacja wyniku dla: {file_identifier} ---")
+    # Step 2: Use PrivacyGuard to anonymize text
+    print(f"--- Anonymizing result for: {file_identifier} ---")
     
-    # Konstrukcja profilu na podstawie kontekstu pacjenta (jeśli dostępny)
+    # Profile construction based on patient context (if available)
     # Convert Pydantic model to dict if needed, or access attributes directly
     # Assuming patient_context is Pydantic model
     
@@ -85,7 +85,7 @@ def process_single_file(file_content, vision_ocr_client, analyzer_instance, pati
             "dob_fragment": dob_fragment,
             "address": address
         })
-        print(f"Using provided patient context.") # USUNIĘTO PII
+        print(f"Using provided patient context.") # REMOVED PII
 
     guard = PrivacyGuard(current_profile)
     anonymized_text = guard.anonymize(page_texts)
@@ -106,17 +106,17 @@ def process_single_file(file_content, vision_ocr_client, analyzer_instance, pati
     try:
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write(anonymized_text)
-        print(f"✅ Zapisano zanonimizowany tekst do: {txt_path}")
+        print(f"✅ Saved anonymized text to: {txt_path}")
     except Exception as e:
-        print(f"⚠️ Błąd zapisu cleaned_results: {e}")
+        print(f"⚠️ Error saving cleaned_results: {e}")
 
-    # Krok 3: Analiza medyczna przez LLM
-    print(f"--- Analiza LLM dla: {file_identifier} ---")
+    # Step 3: Medical Analysis by LLM
+    print(f"--- LLM Analysis for: {file_identifier} ---")
     analysis_result = analyzer_instance.analyze_text(anonymized_text)
     
-    # Przetwarzanie wyniku
+    # Processing the result
     if analysis_result:
-        # Zapisz JSON z wynikami (zawsze włączone dla debugowania)
+        # Save JSON with results (always enabled for debugging)
         if SAVE_JSON_ENABLED:
             output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "json_results")
             os.makedirs(output_dir, exist_ok=True)
@@ -135,47 +135,47 @@ def process_single_file(file_content, vision_ocr_client, analyzer_instance, pati
             try:
                 with open(json_path, "w", encoding="utf-8") as f:
                     json.dump(analysis_result, f, indent=4, ensure_ascii=False)
-                print(f"✅ Zapisano wynik JSON do: {json_path}")
+                print(f"✅ Saved JSON result to: {json_path}")
             except Exception as e:
-                print(f"⚠️ Błąd zapisu JSON: {e}")
+                print(f"⚠️ Error saving JSON: {e}")
 
-        # Spłaszczanie wyników do tabeli (opcjonalne, zależne od potrzeb)
+        # Flattening results to a table (optional, depending on needs)
         # return flat_result if flat_result else analysis_result
-        return analysis_result # Zwracamy pełny JSON zgodnie z oczekiwaniami serwera
+        return analysis_result # Returning full JSON as expected by the server
     
     return None
 
 def main():
-    print("Skanowanie folderu w poszukiwaniu plików PDF...")
-    # Zmieniono ścieżkę na katalog uploads w root projektu
+    print("Scanning folder for PDF files...")
+    # Changed path to uploads directory in project root
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
     uploads_dir = os.path.join(project_root, "uploads")
     
-    # Upewnij się, że katalog uploads istnieje
+    # Ensure uploads directory exists
     if not os.path.exists(uploads_dir):
-        print(f"Katalog {uploads_dir} nie istnieje. Tworzę go...")
+        print(f"Directory {uploads_dir} does not exist. Creating it...")
         os.makedirs(uploads_dir)
         
     files = glob.glob(os.path.join(uploads_dir, "*.pdf"))
 
-    print(f"Znaleziono plików: {len(files)}")
+    print(f"Found files: {len(files)}")
 
-    # Inicjalizacja OCR (jeśli wybrano Google Vision)
+    # Initialize OCR (if Google Vision is selected)
     vision_ocr = None
     if USE_GOOGLE_VISION:
-        # Ścieżka do klucza GCP względem katalogu engine-python
+        # GCP key path relative to engine-python directory
         key_path = os.path.abspath(os.path.join(current_dir, GCP_KEY_PATH))
         
-        # Sprawdzenie czy plik klucza istnieje
+        # Check if key file exists
         if not os.path.exists(key_path):
-            print(f"BŁĄD: Nie znaleziono pliku klucza GCP pod ścieżką: {key_path}")
-            print("Upewnij się, że plik gcp_key.json znajduje się w katalogu engine-python.")
+            print(f"ERROR: GCP key file not found at path: {key_path}")
+            print("Make sure gcp_key.json is in the engine-python directory.")
             return
 
         vision_ocr = GoogleVisionOCR(key_path, poppler_path=r'C:\poppler-25.12.0\Library\bin')
 
-    # Inicjalizacja analizatora
+    # Initialize analyzer
     analyzer = MedicalAnalyzer()
 
     all_results = []
@@ -186,17 +186,17 @@ def main():
         if data:
             all_results.append(data)
         else:
-            print(f"Nie udało się pobrać danych z pliku: {os.path.basename(file)}")
+            print(f"Failed to retrieve data from file: {os.path.basename(file)}")
 
-        # Przy tekście limity są luźniejsze, wystarczy krótkie opóźnienie
+        # For text, limits are looser, short delay is enough
         time.sleep(2)
 
-    # Krok 4: Wyświetlenie wyników (JSON)
+    # Step 4: Display results (JSON)
     if not all_results:
-        print("Brak danych do analizy.")
+        print("No data to analyze.")
         return
 
-    print("\n--- WYNIKI ANALIZY (JSON) ---")
+    print("\n--- ANALYSIS RESULTS (JSON) ---")
     print(json.dumps(all_results, indent=4, ensure_ascii=False))
 
 

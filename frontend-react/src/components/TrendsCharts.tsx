@@ -51,7 +51,7 @@ interface ChartDataPoint {
   flag?: string | null;
 }
 
-// --- KONFIGURACJA NORMALIZACJI (Port z Python) ---
+// --- NORMALIZATION CONFIGURATION (Port from Python) ---
 const UNIT_NORMALIZATION_MAP: Record<string, string> = {
   "min/ul": "mln/ul",
   "f": "fl",
@@ -75,11 +75,11 @@ const renderCustomDot = (props: any) => {
     const { cx, cy, payload } = props;
     const flag = payload.flag;
     
-    // Kolory zgodne ze skryptem Python:
-    // H -> Czerwony
-    // L -> Niebieski
-    // Norma -> Teal (Morski/Zielony)
-    let fill = "#0d9488"; // teal-600 (W normie - domyślny)
+    // Colors consistent with the Python script:
+    // H -> Red
+    // L -> Blue
+    // Normal -> Teal (Sea/Green)
+    let fill = "#0d9488"; // teal-600 (Normal - default)
     let r = 5;
 
     if (flag === "H") {
@@ -205,7 +205,7 @@ export const TrendsCharts = ({ documents }: TrendsChartsProps) => {
             const date = analysis.meta.date_examination;
 
             analysis.examinations?.forEach(exam => {
-                // 1. Czyszczenie nazwy sekcji (usuwanie ICD-9)
+                // 1. Cleaning section name (removing ICD-9)
                 const sectionName = (exam.examination_name || 'Inne').replace(/\s*\(ICD-9:.*\)/, '').trim();
 
                 if (!dataMap.has(sectionName)) {
@@ -214,20 +214,20 @@ export const TrendsCharts = ({ documents }: TrendsChartsProps) => {
                 const sectionCharts = dataMap.get(sectionName)!;
 
                 exam.results?.forEach(res => {
-                    // 2. Czyszczenie nazwy parametru (usuwanie jednostek w nawiasach)
+                    // 2. Cleaning parameter name (removing units in parentheses)
                     let paramName = res.name.replace(/\s*[\[\(].*?[\]\)]$/, '').trim();
                     
-                    // 3. Normalizacja nazwy parametru
+                    // 3. Normalizing parameter name
                     paramName = PARAMETER_NAME_NORMALIZATION_MAP[paramName] || paramName;
 
-                    // 4. Czyszczenie i normalizacja jednostki
+                    // 4. Cleaning and normalizing unit
                     let unit = res.unit;
                     if (unit) {
-                        const cleanedUnit = unit.replace(/[\*$\s]/g, ''); // Usuwa *, $ i spacje
+                        const cleanedUnit = unit.replace(/[\*$\s]/g, ''); // Removes *, $ and spaces
                         unit = UNIT_NORMALIZATION_MAP[cleanedUnit] || cleanedUnit;
                     }
 
-                    // 5. Tworzenie klucza wykresu: "Parametr [Jednostka]"
+                    // 5. Creating chart key: "Parameter [Unit]"
                     const uniqueKey = unit ? `${paramName} [${unit}]` : paramName;
 
                     if (!sectionCharts.has(uniqueKey)) {

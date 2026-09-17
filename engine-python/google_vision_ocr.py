@@ -7,17 +7,17 @@ from collections import defaultdict
 class GoogleVisionOCR:
     def __init__(self, key_path=None, poppler_path=None):
         """
-        Inicjalizuje klienta Google Vision API.
-        :param key_path: Ścieżka do pliku JSON z kluczem (opcjonalne w Cloud Run).
-        :param poppler_path: Ścieżka do binariów Poppler.
+        Initializes the Google Vision API client.
+        :param key_path: Path to the JSON key file (optional in Cloud Run).
+        :param poppler_path: Path to Poppler binaries.
         """
         if key_path and os.path.exists(key_path):
             self.client = vision.ImageAnnotatorClient.from_service_account_json(key_path)
-            print(f"Vision OCR: Użyto klucza z pliku: {key_path}")
+            print(f"Vision OCR: Used key from file: {key_path}")
         else:
-            # Użyj Application Default Credentials (ADC) - działa w Cloud Run automatycznie
+            # Use Application Default Credentials (ADC) - works automatically in Cloud Run
             self.client = vision.ImageAnnotatorClient()
-            print("Vision OCR: Użyto Application Default Credentials (ADC)")
+            print("Vision OCR: Used Application Default Credentials (ADC)")
             
         self.poppler_path = poppler_path
 
@@ -58,10 +58,10 @@ class GoogleVisionOCR:
 
     def extract_text(self, file_path):
         """
-        Główna metoda: obsługuje pliki PDF i obrazy, zwraca listę stron (tekst).
+        Main method: handles PDF files and images, returns a list of pages (text).
         """
         if not os.path.exists(file_path):
-            print(f"Błąd: Nie znaleziono pliku {file_path}")
+            print(f"Error: File not found {file_path}")
             return None
 
         file_ext = os.path.splitext(file_path)[1].lower()
@@ -70,18 +70,18 @@ class GoogleVisionOCR:
         try:
             if file_ext == '.pdf':
                 if not self.poppler_path:
-                    print("Ostrzeżenie: Brak ścieżki do Poppler. Obsługa PDF może nie działać.")
+                    print("Warning: Missing path to Poppler. PDF handling might not work.")
                 
-                # Konwersja PDF na obrazy
+                # Convert PDF to images
                 images = convert_from_path(file_path, poppler_path=self.poppler_path)
                 
                 for img in images:
-                    # Konwersja PIL Image na bytes
+                    # Convert PIL Image to bytes
                     img_byte_arr = io.BytesIO()
                     img.save(img_byte_arr, format='JPEG')
                     content = img_byte_arr.getvalue()
                     
-                    # Przetwarzanie obrazu
+                    # Process image
                     text = self._process_image_content(content)
                     pages_text.append(text)
 
@@ -93,34 +93,34 @@ class GoogleVisionOCR:
                 pages_text.append(text)
             
             else:
-                print(f"Błąd: Nieobsługiwany format pliku: {file_ext}")
+                print(f"Error: Unsupported file format: {file_ext}")
                 return None
 
             return pages_text
 
         except Exception as e:
-            print(f"Błąd podczas przetwarzania Vision API: {e}")
+            print(f"Error processing with Vision API: {e}")
             return None
 
     def _process_image_content(self, image_content):
         image = vision.Image(content=image_content)
-        # Używamy document_text_detection, bo zwraca gęstą strukturę
+        # We use document_text_detection, because it returns a dense structure
         response = self.client.document_text_detection(image=image)
         
         if response.error.message:
             raise Exception(f'{response.error.message}')
 
-        # Używamy nowej funkcji rekonstrukcji geometrii
+        # We use the new geometry reconstruction function
         return self.reconstruct_text_from_geometry(response)
 
     def reconstruct_text_from_geometry(self, response, y_tolerance=10):
         """
-        Sortuje słowa po ich fizycznym położeniu (Y), ignorując "inteligentne"
-        grupowanie bloków przez Google, które psuje tabele.
+        Sorts words by their physical position (Y), ignoring Google's "smart"
+        block grouping, which breaks tables.
         """
         words = []
         
-        # 1. Wyciągnij wszystkie słowa ze struktur Google'a
+        # 1. Extract all words from Google's structures
         for page in response.full_text_annotation.pages:
             for block in page.blocks:
                 for paragraph in block.paragraphs:
@@ -141,10 +141,10 @@ class GoogleVisionOCR:
 
         if not words: return ""
 
-        # 2. Sortowanie zgrubne po Y
+        # 2. Rough sorting by Y
         words.sort(key=lambda w: w["y"])
 
-        # 3. Grupowanie w wiersze (Line Clustering)
+        # 3. Line Clustering
         lines = []
         current_line = []
         if words:

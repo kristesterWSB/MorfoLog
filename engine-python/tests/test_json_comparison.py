@@ -6,91 +6,91 @@ import sys
 class TestJsonComparison(unittest.TestCase):
     
     def setUp(self):
-        """Konfiguracja ścieżek przed testem."""
-        # Ścieżka bazowa projektu (C:/MorfoLog/engine-python)
+        """Path configuration before the test."""
+        # Project base path (C:/MorfoLog/engine-python)
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        # NAZWA PLIKU DO TESTU (Dostosuj jeśli Twój plik nazywa się inaczej)
-        # Zakładamy, że main.py przetworzył 'sample_ocr.pdf' i zapisał 'sample_ocr.json'
+        # FILENAME FOR TEST (Adjust if your file is named differently)
+        # We assume main.py processed 'sample_ocr.pdf' and saved 'sample_ocr.json'
         self.filename = "wyniki-31_12_25_morfologia.json"
         
-        # Ścieżka do wygenerowanego pliku (przez main.py)
+        # Path to the generated file (by main.py)
         self.generated_path = os.path.join(self.project_root, "json_results", self.filename)
         
-        # Ścieżka do oczekiwanego pliku (wzorzec)
+        # Path to the expected file (reference)
         self.expected_path = os.path.join(self.project_root, "tests", "test_data", "expected-31_12_25_morfologia.json")
         
-        # Ustawienie, aby widzieć pełną różnicę w konsoli w przypadku błędu
+        # Setting to see full diff in console in case of error
         self.maxDiff = None
 
     def test_compare_generated_vs_expected(self):
-        """Porównuje wygenerowany JSON z oczekiwanym wzorcem."""
+        """Compares generated JSON with expected reference."""
         
-        # 1. Sprawdź czy pliki istnieją
+        # 1. Check if files exist
         if not os.path.exists(self.generated_path):
-            self.fail(f"Nie znaleziono wygenerowanego pliku: {self.generated_path}.\n"
-                      f"Uruchom najpierw main.py, aby wygenerować wyniki.")
+            self.fail(f"Generated file not found: {self.generated_path}.\n"
+                      f"Run main.py first to generate results.")
             
         if not os.path.exists(self.expected_path):
-            self.fail(f"Nie znaleziono pliku wzorcowego: {self.expected_path}")
+            self.fail(f"Reference file not found: {self.expected_path}")
 
-        # 2. Wczytaj oba pliki
+        # 2. Load both files
         with open(self.generated_path, 'r', encoding='utf-8') as f:
             generated_data = json.load(f)
             
         with open(self.expected_path, 'r', encoding='utf-8') as f:
             expected_data = json.load(f)
 
-        # 3. Porównanie rekurencyjne (pokazuje błąd tylko w konkretnym miejscu)
-        print(f"\n[TEST] Porównywanie struktury JSON dla: {self.filename}")
+        # 3. Recursive comparison (shows error only in specific place)
+        print(f"\n[TEST] Comparing JSON structure for: {self.filename}")
         errors = []
         self._collect_json_errors(generated_data, expected_data, errors=errors)
         
         if errors:
-            self.fail(f"\n❌ TEST FAILED. Znaleziono {len(errors)} błędów:\n" + "\n".join(errors))
+            self.fail(f"\n❌ TEST FAILED. Found {len(errors)} errors:\n" + "\n".join(errors))
             
-        print(f"✅ Test OK: Plik {self.filename} jest zgodny z wzorcem.")
+        print(f"✅ Test OK: File {self.filename} matches reference.")
 
     def _collect_json_errors(self, received, expected, errors, path="root"):
         """
-        Rekurencyjnie porównuje JSON i zbiera wszystkie błędy do listy `errors`.
+        Recursively compares JSON and collects all errors into `errors` list.
         """
-        # 1. Sprawdzenie typów (z tolerancją dla int vs float)
+        # 1. Type checking (with tolerance for int vs float)
         if type(received) is not type(expected):
             if not (isinstance(received, (int, float)) and isinstance(expected, (int, float))):
-                errors.append(f"Błąd w '{path}': Niezgodność typów. Otrzymano: {type(received).__name__}, Oczekiwano: {type(expected).__name__}")
+                errors.append(f"Error in '{path}': Type mismatch. Received: {type(received).__name__}, Expected: {type(expected).__name__}")
                 return
 
-        # 2. Słowniki
+        # 2. Dictionaries
         if isinstance(received, dict):
-            # Sprawdź klucze
+            # Check keys
             rec_keys = set(received.keys())
             exp_keys = set(expected.keys())
             
             if rec_keys != exp_keys:
                 missing = exp_keys - rec_keys
                 extra = rec_keys - exp_keys
-                msg = f"Błąd w '{path}': Niezgodność kluczy."
-                if missing: msg += f"\n  Brakujące: {missing}"
-                if extra: msg += f"\n  Nadmiarowe: {extra}"
+                msg = f"Error in '{path}': Keys mismatch."
+                if missing: msg += f"\n  Missing: {missing}"
+                if extra: msg += f"\n  Extra: {extra}"
                 errors.append(msg)
             
-            # Rekurencja
-            # Iterujemy tylko po wspólnych kluczach, aby uniknąć błędów przy braku klucza
+            # Recursion
+            # We iterate only over common keys to avoid errors when key is missing
             common_keys = rec_keys.intersection(exp_keys)
             for key in common_keys:
                 self._collect_json_errors(received[key], expected[key], errors, path=f"{path}.{key}")
 
-        # 3. Listy
+        # 3. Lists
         elif isinstance(received, list):
             if len(received) != len(expected):
-                errors.append(f"Błąd w '{path}': Różna długość listy. Otrzymano: {len(received)}, Oczekiwano: {len(expected)}")
+                errors.append(f"Error in '{path}': Different list length. Received: {len(received)}, Expected: {len(expected)}")
             
             for i, (r_item, e_item) in enumerate(zip(received, expected)):
-                # Dodajemy kontekst (np. nazwę badania), żeby łatwiej znaleźć błąd w liście
+                # We add context (e.g. examination name) to easily find error in list
                 context = ""
                 if isinstance(r_item, dict):
-                    # Lista kluczy, które mogą służyć jako identyfikatory obiektu
+                    # List of keys that can serve as object identifiers
                     for id_key in ['name', 'examination_name', 'id', 'key', 'Date']:
                         if id_key in r_item:
                             context = f" <{id_key}={r_item[id_key]}>"
@@ -98,16 +98,16 @@ class TestJsonComparison(unittest.TestCase):
                 
                 self._collect_json_errors(r_item, e_item, errors, path=f"{path}[{i}]{context}")
 
-        # 4. Wartości proste
+        # 4. Simple values
         else:
             if received != expected:
-                errors.append(f"❌ BŁĄD WARTOŚCI w: {path}\n   Otrzymano:  {received!r}\n   Oczekiwano: {expected!r}")
+                errors.append(f"❌ VALUE ERROR in: {path}\n   Received:  {received!r}\n   Expected: {expected!r}")
 
     def normalize_json(self, data):
         """
-        Opcjonalna metoda pomocnicza. Jeśli testy będą oblewać przez drobne różnice 
-        (np. 5.0 vs 5), można użyć tej funkcji do normalizacji przed porównaniem.
-        Na razie nie jest używana w teście głównym.
+        Optional helper method. If tests fail due to minor differences
+        (e.g. 5.0 vs 5), you can use this function to normalize before comparison.
+        Not used in main test for now.
         """
         return json.loads(json.dumps(data, sort_keys=True))
 
