@@ -48,6 +48,9 @@ Create a `.env` file in the root directory (`C:/MorfoLog/.env`) and add your API
 GEMINI_API_KEY=your_google_gemini_key
 XAI_API_KEY=your_xai_grok_key
 
+# AI Model Selection (change without redeploying)
+GEMINI_MODEL_NAME=gemini-3.5-flash-lite
+
 # User Profile (For Anonymization)
 USER_NAME=Jan
 USER_LASTNAME=Kowalski
