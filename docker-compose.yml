@@ -29,6 +29,8 @@ services:
     environment:
       # We mount the key directly from the engine-python folder where it currently resides
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp_key.json
+      # AI Model Selection (change without redeploying)
+      - GEMINI_MODEL_NAME=${GEMINI_MODEL_NAME:-gemini-3.5-flash-lite}
     volumes:
       # Mounting the key from engine-python/gcp_key.json to /app/gcp_key.json in container
       # This matches the working directory in Dockerfile (/app)
